@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Word temp files
+~$*.docx
+
+# Local Claude settings
+.claude/
+
+# Documents and images (not tracking)
+*.docx
+*.png
