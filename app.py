@@ -59,6 +59,8 @@ class AnalysisParams:
     # Filtering parameters
     median_window: int = 9  # breaths
     bin_size: float = 4.0   # seconds
+    hampel_window_sec: float = 30.0  # seconds - time window for Hampel filter
+    hampel_n_sigma: float = 3.0  # sigma threshold for Hampel outlier detection
     # Ceiling-based analysis parameters
     vt1_ve_ceiling: float = 100.0  # L/min - user-provided VT1 VE ceiling
     vt2_ve_ceiling: float = 120.0  # L/min - user-provided VT2 VE ceiling
@@ -345,7 +347,7 @@ def parse_csv_auto(uploaded_file) -> Tuple[pd.DataFrame, dict, pd.DataFrame, Opt
 
 
 # ============================================================================
-# SIGNAL FILTERING (Two-Stage)
+# SIGNAL FILTERING (Three-Stage)
 # ============================================================================
 
 def apply_median_filter(ve_raw: np.ndarray, window: int = 9) -> np.ndarray:
@@ -422,23 +424,85 @@ def apply_time_binning(ve_clean: np.ndarray, breath_times: np.ndarray,
     return bin_starts, bin_values
 
 
+def apply_hampel_filter(bin_times: np.ndarray, bin_values: np.ndarray,
+                        window_sec: float = 30.0, n_sigma: float = 3.0) -> np.ndarray:
+    """
+    Stage 3: Hampel filter for removing consecutive outlier clusters from binned data.
+
+    Uses a time-based window (default 30 seconds) centered on each bin.
+    Bins deviating more than n_sigma MAD-scaled standard deviations from
+    the window median are replaced with the window median.
+
+    This handles cases where the median filter fails due to consecutive
+    outliers (e.g., 5+ spike values in a row that dominate the median window).
+
+    Args:
+        bin_times: Uniformly-spaced bin timestamps
+        bin_values: Binned VE values (already median-filtered and binned)
+        window_sec: Window size in seconds (total, centered on each point)
+        n_sigma: Number of scaled MAD units for outlier threshold
+
+    Returns:
+        ve_cleaned: VE values with outliers replaced by window median
+    """
+    if len(bin_values) < 3:
+        return bin_values.copy()
+
+    ve_cleaned = bin_values.copy()
+    half_window = window_sec / 2.0
+
+    for i in range(len(bin_values)):
+        t = bin_times[i]
+        v = bin_values[i]
+
+        # Get all bins within the time window
+        window_mask = (bin_times >= t - half_window) & (bin_times <= t + half_window)
+        window_ve = bin_values[window_mask]
+
+        if len(window_ve) < 3:
+            continue  # Not enough points for robust statistics
+
+        # Calculate median and MAD (Median Absolute Deviation)
+        window_median = np.median(window_ve)
+        window_mad = np.median(np.abs(window_ve - window_median))
+        window_mad_scaled = 1.4826 * window_mad  # Scale factor for normal distribution
+
+        if window_mad_scaled < 1e-6:
+            continue  # Avoid division by zero (all values identical)
+
+        # Calculate deviation in sigma units
+        deviation = abs(v - window_median)
+        sigma_dev = deviation / window_mad_scaled
+
+        # Replace outliers with window median
+        if sigma_dev > n_sigma:
+            ve_cleaned[i] = window_median
+
+    return ve_cleaned
+
+
 def apply_hybrid_filtering(ve_raw: np.ndarray, breath_times: np.ndarray,
                            params: AnalysisParams) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Apply two-stage hybrid filtering:
-    Stage 1: Rolling median (breath domain) - removes outliers/artifacts
+    Apply three-stage hybrid filtering:
+    Stage 1: Rolling median (breath domain) - removes single-breath outliers/artifacts
     Stage 2: Time binning (time domain) - standardizes accumulation rate
+    Stage 3: Hampel filter (time domain) - removes consecutive outlier clusters
 
     Returns:
         ve_median: Median-filtered breath values (for visualization dots)
         bin_times: Bin start timestamps
-        ve_binned: Binned VE values (for CUSUM analysis)
+        ve_binned: Binned VE values after Hampel filtering (for CUSUM analysis)
     """
-    # Stage 1: Median filter
+    # Stage 1: Median filter (removes single-breath spikes)
     ve_median = apply_median_filter(ve_raw, params.median_window)
 
     # Stage 2: Time binning
     bin_times, ve_binned = apply_time_binning(ve_median, breath_times, params.bin_size)
+
+    # Stage 3: Hampel filter (removes consecutive outlier clusters)
+    ve_binned = apply_hampel_filter(bin_times, ve_binned,
+                                    params.hampel_window_sec, params.hampel_n_sigma)
 
     return ve_median, bin_times, ve_binned
 
@@ -1267,7 +1331,7 @@ def analyze_interval_segmented(breath_df: pd.DataFrame, interval: Interval,
     # Relative time within interval (in seconds)
     rel_breath_times = breath_times_raw - breath_times_raw[0]
 
-    # Apply hybrid filtering (2-stage: median filter, binning)
+    # Apply hybrid filtering (3-stage: median filter, binning, hampel)
     ve_median, bin_times_rel, ve_binned = apply_hybrid_filtering(
         ve_raw, rel_breath_times, params
     )
@@ -1678,7 +1742,7 @@ def analyze_interval_ceiling(breath_df: pd.DataFrame, interval: Interval,
     # Relative time within interval (in seconds)
     rel_breath_times = breath_times_raw - breath_times_raw[0]
 
-    # Apply hybrid filtering (2-stage: median filter, binning)
+    # Apply hybrid filtering (3-stage: median filter, binning, hampel)
     ve_median, bin_times_rel, ve_binned = apply_hybrid_filtering(
         ve_raw, rel_breath_times, params
     )
@@ -2977,8 +3041,9 @@ def main():
             st.markdown("""
             **1. Data Processing**
             - Extracts breath-by-breath VE data from VitalPro or iOS app CSV
-            - Stage 1: Rolling median filter (9 breaths) removes outliers/artifacts
+            - Stage 1: Rolling median filter (9 breaths) removes single-breath outliers/artifacts
             - Stage 2: 4-second bin averaging standardizes time series (~3-4 breaths/bin at 55 br/min)
+            - Stage 3: Hampel filter (30s window) removes consecutive outlier clusters
             - Uses breath timestamps (not row index) for accurate timing
 
             **2. Interval Detection**
@@ -3003,7 +3068,7 @@ def main():
 
             *Ceiling-Based CUSUM (for intervals < 6 min):*
             - Uses user-provided VT1/VT2 VE ceilings
-            - Minimal warm-up (~20s for median filter)
+            - Minimal warm-up (~20s for filter stabilization)
             - Detects VE *exceeding* the threshold ceiling
             - Better for short intervals where drift analysis is impractical
 
