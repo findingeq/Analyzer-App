@@ -11,3 +11,6 @@ __pycache__/
 # Documents and images (not tracking)
 *.docx
 *.png
+
+# Archive folder (old versions)
+Archive/
