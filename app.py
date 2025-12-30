@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from enum import Enum
 from streamlit_js_eval import streamlit_js_eval
+from pathlib import Path
+import json
+from io import StringIO
 
 # ============================================================================
 # CONFIGURATION & DATA STRUCTURES
@@ -136,6 +139,72 @@ class CumulativeDriftResult:
     interval_avg_ve: np.ndarray      # Y-values (last-60s average VE)
     line_times: np.ndarray           # X-values for regression line
     line_ve: np.ndarray              # Y-values for regression line
+
+# ============================================================================
+# CLOUD SESSION HELPERS
+# ============================================================================
+
+# Path to uploads directory (relative to this file)
+UPLOADS_DIR = Path(__file__).parent / "uploads"
+
+
+def list_cloud_sessions() -> list:
+    """
+    List all uploaded sessions from the uploads folder.
+    Returns list of dicts with session_id, filename, uploaded_at.
+    """
+    sessions = []
+
+    if not UPLOADS_DIR.exists():
+        return sessions
+
+    for meta_file in sorted(UPLOADS_DIR.glob("*.meta.json"), reverse=True):
+        try:
+            metadata = json.loads(meta_file.read_text())
+            session_id = meta_file.stem.replace(".meta", "")
+            sessions.append({
+                "session_id": session_id,
+                "filename": metadata.get("filename", session_id),
+                "uploaded_at": metadata.get("uploaded_at", ""),
+            })
+        except Exception:
+            continue
+
+    return sessions
+
+
+def load_cloud_session(session_id: str) -> Optional[StringIO]:
+    """
+    Load CSV content from a cloud session.
+    Returns a StringIO object that mimics an uploaded file.
+    """
+    csv_path = UPLOADS_DIR / session_id
+
+    if not csv_path.exists():
+        return None
+
+    csv_content = csv_path.read_text()
+    return StringIO(csv_content)
+
+
+class CloudSessionFile:
+    """Wrapper to make a cloud session look like an uploaded file."""
+
+    def __init__(self, session_id: str, filename: str, content: str):
+        self.name = filename
+        self.size = len(content)
+        self._content = content.encode('utf-8')
+        self._position = 0
+
+    def getvalue(self) -> bytes:
+        return self._content
+
+    def seek(self, position: int):
+        self._position = position
+
+    def read(self) -> bytes:
+        return self._content[self._position:]
+
 
 # ============================================================================
 # DATA PARSING
@@ -2437,12 +2506,55 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        uploaded_file = st.file_uploader(
-            "Upload CSV",
-            type=['csv'],
-            help="Upload CSV from VitalPro or iOS app"
+        # Data source selection
+        data_source = st.radio(
+            "Data Source",
+            options=["Upload File", "Fetch from Cloud"],
+            horizontal=True,
+            help="Upload a local CSV or fetch from iOS app uploads"
         )
-        
+
+        uploaded_file = None
+
+        if data_source == "Upload File":
+            uploaded_file = st.file_uploader(
+                "Upload CSV",
+                type=['csv'],
+                help="Upload CSV from VitalPro or iOS app"
+            )
+        else:
+            # Fetch from Cloud
+            cloud_sessions = list_cloud_sessions()
+
+            if not cloud_sessions:
+                st.info("No cloud sessions available. Upload from iOS app first.")
+            else:
+                # Create display options
+                session_options = ["-- Select a session --"] + [
+                    f"{s['filename']} ({s['uploaded_at'][:10] if s['uploaded_at'] else 'unknown'})"
+                    for s in cloud_sessions
+                ]
+
+                selected_idx = st.selectbox(
+                    "Select Session",
+                    options=range(len(session_options)),
+                    format_func=lambda i: session_options[i],
+                    help="Sessions uploaded from iOS app"
+                )
+
+                if selected_idx > 0:
+                    # Load the selected session
+                    session = cloud_sessions[selected_idx - 1]
+                    csv_path = UPLOADS_DIR / session['session_id']
+
+                    if csv_path.exists():
+                        csv_content = csv_path.read_text()
+                        uploaded_file = CloudSessionFile(
+                            session['session_id'],
+                            session['filename'],
+                            csv_content
+                        )
+
         if uploaded_file is not None:
             # Create unique file identifier using name + size
             file_id = f"{uploaded_file.name}_{uploaded_file.size}"
@@ -2498,7 +2610,7 @@ def main():
                 except Exception as e:
                     st.error(f"Error parsing file: {str(e)}")
             else:
-                st.success(f"âœ“ Loaded {len(st.session_state.breath_df)} breaths")
+                st.success(f"Loaded {len(st.session_state.breath_df)} breaths")
 
         # Analyze button (placed after upload, before Run Format)
         analyze_btn = st.button("Analyze Run", type="primary", use_container_width=True)
