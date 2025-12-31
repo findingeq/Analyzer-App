@@ -5,13 +5,17 @@ Provides:
 - CSV file parsing and interval detection
 - CUSUM analysis endpoints
 - Cloud session management (Firebase Storage)
+- Static file serving for React frontend
 """
 
 import os
 import json
+from pathlib import Path
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # Import routers
@@ -190,3 +194,32 @@ def delete_session(session_id: str):
         meta_blob.delete()
 
     return {"success": True, "message": f"Deleted {session_id}"}
+
+
+# =============================================================================
+# Static File Serving for React Frontend
+# =============================================================================
+
+# Path to the built React frontend
+STATIC_DIR = Path(__file__).parent.parent / "web" / "dist"
+
+# Serve static files if the build exists
+if STATIC_DIR.exists():
+    # Mount static assets (JS, CSS, etc.)
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve the React SPA for all non-API routes."""
+        # Don't serve index.html for API routes
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # Check if requesting a specific file
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(STATIC_DIR / "index.html")
