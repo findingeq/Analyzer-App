@@ -1,0 +1,2 @@
+# This directory stores uploaded CSV files from the iOS app
+# Files here are ignored by git (see .gitignore)
