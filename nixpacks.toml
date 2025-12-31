@@ -2,7 +2,7 @@
 # Builds React frontend and runs Python backend
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "python311", "npm"]
+nixPkgs = ["nodejs_20", "python311"]
 
 [phases.install]
 cmds = [
