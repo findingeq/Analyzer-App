@@ -3,6 +3,7 @@ VT Threshold Analyzer - Desktop Application
 Analyzes Tymewear VitalPro respiratory data to assess VT1/VT2 compliance
 """
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -16,6 +17,9 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from enum import Enum
 from streamlit_js_eval import streamlit_js_eval
+from pathlib import Path
+import json
+from io import StringIO
 
 # ============================================================================
 # CONFIGURATION & DATA STRUCTURES
@@ -138,6 +142,62 @@ class CumulativeDriftResult:
     interval_avg_ve: np.ndarray      # Y-values (last-60s average VE)
     line_times: np.ndarray           # X-values for regression line
     line_ve: np.ndarray              # Y-values for regression line
+
+# ============================================================================
+# CLOUD SESSION HELPERS
+# ============================================================================
+
+import requests
+
+# API URL for cloud sessions
+API_URL = os.environ.get("API_URL", "https://vt-analyzer-api-150754443656.us-central1.run.app")
+
+
+def list_cloud_sessions() -> list:
+    """
+    List all uploaded sessions from the API.
+    Returns list of dicts with session_id, filename, uploaded_at.
+    """
+    try:
+        response = requests.get(f"{API_URL}/api/sessions", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
+
+
+def get_cloud_session_content(session_id: str) -> Optional[str]:
+    """
+    Get CSV content for a specific session from the API.
+    """
+    try:
+        response = requests.get(f"{API_URL}/api/sessions/{session_id}", timeout=10)
+        if response.status_code == 200:
+            return response.json().get("csv_content")
+        return None
+    except Exception:
+        return None
+
+
+class CloudSessionFile:
+    """Wrapper to make a cloud session look like an uploaded file."""
+
+    def __init__(self, session_id: str, filename: str, content: str):
+        self.name = filename
+        self.size = len(content)
+        self._content = content.encode('utf-8')
+        self._position = 0
+
+    def getvalue(self) -> bytes:
+        return self._content
+
+    def seek(self, position: int):
+        self._position = position
+
+    def read(self) -> bytes:
+        return self._content[self._position:]
+
 
 # ============================================================================
 # DATA PARSING
@@ -2501,12 +2561,56 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        uploaded_file = st.file_uploader(
-            "Upload CSV",
-            type=['csv'],
-            help="Upload CSV from VitalPro or iOS app"
+        # Data source selection
+        data_source = st.radio(
+            "Data Source",
+            options=["Upload File", "Fetch from Cloud"],
+            horizontal=True,
+            help="Upload a local CSV or fetch from iOS app uploads"
         )
-        
+
+        uploaded_file = None
+
+        if data_source == "Upload File":
+            uploaded_file = st.file_uploader(
+                "Upload CSV",
+                type=['csv'],
+                help="Upload CSV from VitalPro or iOS app"
+            )
+        else:
+            # Fetch from Cloud
+            cloud_sessions = list_cloud_sessions()
+
+            if not cloud_sessions:
+                st.info("No cloud sessions available. Upload from iOS app first.")
+            else:
+                # Create display options
+                session_options = ["-- Select a session --"] + [
+                    f"{s['filename']} ({s['uploaded_at'][:10] if s['uploaded_at'] else 'unknown'})"
+                    for s in cloud_sessions
+                ]
+
+                selected_idx = st.selectbox(
+                    "Select Session",
+                    options=range(len(session_options)),
+                    format_func=lambda i: session_options[i],
+                    help="Sessions uploaded from iOS app"
+                )
+
+                if selected_idx > 0:
+                    # Load the selected session from API
+                    session = cloud_sessions[selected_idx - 1]
+                    csv_content = get_cloud_session_content(session['session_id'])
+
+                    if csv_content:
+                        uploaded_file = CloudSessionFile(
+                            session['session_id'],
+                            session['filename'],
+                            csv_content
+                        )
+                    else:
+                        st.error("Failed to load session from cloud")
+
         if uploaded_file is not None:
             # Create unique file identifier using name + size
             file_id = f"{uploaded_file.name}_{uploaded_file.size}"
@@ -2562,7 +2666,7 @@ def main():
                 except Exception as e:
                     st.error(f"Error parsing file: {str(e)}")
             else:
-                st.success(f"âœ“ Loaded {len(st.session_state.breath_df)} breaths")
+                st.success(f"Loaded {len(st.session_state.breath_df)} breaths")
 
         # Analyze button (placed after upload, before Run Format)
         analyze_btn = st.button("Analyze Run", type="primary", use_container_width=True)
