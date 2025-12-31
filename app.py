@@ -3097,11 +3097,11 @@ def main():
             metric_cols = st.columns(num_intervals)
 
             for i, r in enumerate(results):
-                # Determine color based on status
-                if r.status == IntervalStatus.BELOW_THRESHOLD:
+                # Determine color based on status (use .value for reliable comparison after session state)
+                if r.status.value == IntervalStatus.BELOW_THRESHOLD.value:
                     text_color = "#28a745"  # Green
                     bg_color = "#d4edda"
-                elif r.status == IntervalStatus.BORDERLINE:
+                elif r.status.value == IntervalStatus.BORDERLINE.value:
                     text_color = "#856404"  # Dark yellow for readability
                     bg_color = "#fff3cd"
                 else:
