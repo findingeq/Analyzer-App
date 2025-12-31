@@ -4,12 +4,6 @@
  */
 
 import type { ReactNode } from "react";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface DashboardShellProps {
   sidebar: ReactNode;
@@ -32,34 +26,20 @@ export function DashboardShell({ sidebar, chart, footer }: DashboardShellProps) 
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup orientation="horizontal" className="h-full">
-          {/* Sidebar Panel */}
-          <ResizablePanel
-            defaultSize={25}
-            minSize={15}
-            maxSize={40}
-            className="border-r border-border"
-          >
-            <ScrollArea className="h-full">
-              <div className="p-4">{sidebar}</div>
-            </ScrollArea>
-          </ResizablePanel>
+      {/* Main Content - Simplified layout for debugging */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <div className="w-80 border-r border-border overflow-y-auto p-4">
+          {sidebar}
+        </div>
 
-          {/* Resize Handle */}
-          <ResizableHandle withHandle />
-
-          {/* Chart Panel */}
-          <ResizablePanel defaultSize={75} minSize={50}>
-            <div className="flex h-full flex-col">
-              <div className="flex-1 overflow-hidden">{chart}</div>
-              {footer && (
-                <div className="border-t border-border">{footer}</div>
-              )}
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        {/* Chart */}
+        <div className="flex-1 flex flex-col">
+          <div className="flex-1 overflow-hidden">{chart}</div>
+          {footer && (
+            <div className="border-t border-border">{footer}</div>
+          )}
+        </div>
       </div>
     </div>
   );
