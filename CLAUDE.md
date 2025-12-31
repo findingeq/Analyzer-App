@@ -1,44 +1,38 @@
 # Project Rules
 
-## Active Development Branch
-**Branch:** `claude/modern-web-interface-7vbdH`
-**Status:** In Progress - React frontend replacing Streamlit
+## Development
+- Work directly on `main` branch
+- Push changes to `main` for automatic Railway deployment
+- Railway deployment config: `railway.json`, `nixpacks.toml`, `Procfile`
 
-Always checkout this branch at the start of a new conversation:
-```bash
-git checkout claude/modern-web-interface-7vbdH
-git pull origin claude/modern-web-interface-7vbdH
-```
+## Architecture
+- **Frontend:** React + Vite + TypeScript + Tailwind + ECharts (`/web`)
+- **Backend:** Python FastAPI (`/api`)
+- **Deployment:** Railway (single service serving both)
 
-## Feature Status (React Frontend vs Streamlit)
-
-### Implemented in React:
-- [x] Basic dashboard layout with sidebar and chart
-- [x] CSV file upload (local only)
+## React Frontend Features (Implemented)
+- [x] Dashboard layout with sidebar and chart
+- [x] CSV file upload (local)
+- [x] Cloud session loading (Firebase)
+- [x] Data source toggle (Local/Cloud)
 - [x] VE binned line with gradient
 - [x] Breath scatter dots
-- [x] Interval shading (colored by status)
-- [x] Single slope line
-- [x] CUSUM line (fixed color)
-- [x] Results display in sidebar
+- [x] Interval shading (colored by status: green/yellow/red)
+- [x] 3-segment slope lines (segment1 + segment2 + segment3)
+- [x] Slope annotations (%/min labels)
+- [x] CUSUM line with color change (green→red at alarm)
+- [x] Below-chart interval metrics (aligned with intervals)
+- [x] Click-to-zoom on intervals
+- [x] Header metrics (run type format, cumulative drift)
+- [x] Reset zoom button
 
-### Missing in React (exists in Streamlit app.py):
-- [ ] **2-Hinge Model Display:** Segment 2 + Segment 3 lines (purple)
-- [ ] **Slope Annotations:** %/min labels on each segment
-- [ ] **Grey Recovery Shading:** Between intervals
-- [ ] **Yellow Ramp-up Shading:** Before Phase III onset
-- [ ] **Chart Labels:** "Rest", "Int X", "Ramp" with durations
-- [ ] **Below-Chart Metrics:** Clickable "Avg VE / Drift% / Split Slope" for each interval
-- [ ] **Header Metrics:** "VT2 Intervals 4x10" format, cumulative drift display
-- [ ] **Zoomed-in View:** Interval details with Reset button
-- [ ] **Cloud Integration:** List/fetch sessions from Firebase
-- [ ] **CUSUM Color Change:** Green→Red when in alarm
-
-### Backend API Status:
-- [x] CSV parsing (`/api/files/parse`)
-- [x] Interval detection (`/api/files/detect-intervals`)
-- [x] CUSUM analysis (`/api/analysis/run`)
-- [x] Firebase cloud storage (`/api/sessions`, `/api/upload`)
+## Backend API Endpoints
+- `POST /api/files/parse` - Parse CSV metadata
+- `POST /api/files/detect-intervals` - Detect intervals from power data
+- `POST /api/analysis/run` - Run CUSUM analysis
+- `GET /api/sessions` - List cloud sessions (Firebase)
+- `GET /api/sessions/{id}` - Get session CSV content
+- `POST /api/upload` - Upload CSV to cloud
 
 ## General Behavior
 1. When user provides any instructions, carefully evaluate whether the instructions are logical and appropriate given the overall purpose of the app. If the instructions are not clear, ask clarifying questions.
@@ -50,7 +44,6 @@ git pull origin claude/modern-web-interface-7vbdH
 - Always use grid-fitting to detect intervals that extend to end of recording
 - All recoveries and intervals are the same duration across a single run (respectively)
 
-## UI Preferences
-- Zoom buttons must always be within the applicable row, never below the table
-- Keep interface simple during testing phase
-- Use st.columns for table layouts with CSS gap removal
+## Signal Processing
+- 3-stage hybrid filtering: Rolling median → Time binning → Hampel filter
+- 2-hinge robust regression model for VE drift analysis
