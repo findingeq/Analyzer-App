@@ -147,10 +147,8 @@ class CumulativeDriftResult:
 
 import requests
 
-# API URL - change this to your Cloud Run URL after deployment
-# For local development: http://localhost:8000
-# For production: https://your-service-name-xxxxx-uc.a.run.app
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
+# API URL for cloud sessions
+API_URL = os.environ.get("API_URL", "https://vt-analyzer-api-150754443656.us-central1.run.app")
 
 
 def list_cloud_sessions() -> list:
