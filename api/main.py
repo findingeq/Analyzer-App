@@ -1,6 +1,10 @@
 """
-FastAPI Upload Endpoint for VT Threshold Analyzer
-Receives CSV uploads from iOS app and stores in Firebase Storage
+FastAPI Backend for VT Threshold Analyzer
+
+Provides:
+- CSV file parsing and interval detection
+- CUSUM analysis endpoints
+- Cloud session management (Firebase Storage)
 """
 
 import os
@@ -12,7 +16,18 @@ from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, storage
 
-app = FastAPI(title="VT Threshold Analyzer API")
+# Import routers
+from .routers import files_router, analysis_router
+
+app = FastAPI(
+    title="VT Threshold Analyzer API",
+    description="Backend API for respiratory data analysis",
+    version="2.0.0"
+)
+
+# Include routers
+app.include_router(files_router)
+app.include_router(analysis_router)
 
 # Allow requests from iOS app and local development
 app.add_middleware(
