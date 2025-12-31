@@ -1,10 +1,10 @@
 /**
  * Sidebar Component
- * File upload, run configuration, and interval results
+ * File upload, cloud session selection, run configuration
  */
 
-import { useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -15,11 +15,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { useRunStore } from "@/store/use-run-store";
-import { RunType, IntervalStatus } from "@/lib/api-types";
-import { parseCSV, detectIntervals, runAnalysis, readFileAsText } from "@/lib/client";
+import { RunType } from "@/lib/api-types";
+import {
+  parseCSV,
+  detectIntervals,
+  runAnalysis,
+  readFileAsText,
+  listSessions,
+  getSession,
+  type SessionInfo,
+} from "@/lib/client";
 import { formatTime } from "@/lib/utils";
 
 export function Sidebar() {
@@ -33,9 +39,9 @@ export function Sidebar() {
     recoveryDurationMin,
     analysisResult,
     isAnalyzing,
-    selectedIntervalId,
     showSlopeLines,
     showCusum,
+    dataSource,
     setCSVContent,
     setCSVMetadata,
     setRunType,
@@ -44,11 +50,21 @@ export function Sidebar() {
     setRecoveryDuration,
     setAnalysisResult,
     setIsAnalyzing,
-    setSelectedInterval,
     toggleSlopeLines,
     toggleCusum,
+    setDataSource,
     reset,
   } = useRunStore();
+
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  // Fetch cloud sessions
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions"],
+    queryFn: listSessions,
+    enabled: dataSource === "cloud",
+    retry: false,
+  });
 
   // Parse CSV mutation
   const parseMutation = useMutation({
@@ -57,6 +73,24 @@ export function Sidebar() {
       setCSVContent(content, file.name);
       const metadata = await parseCSV({ csv_content: content });
       const intervals = await detectIntervals({ csv_content: content });
+      return { metadata, intervals };
+    },
+    onSuccess: ({ metadata, intervals }) => {
+      setCSVMetadata(metadata);
+      setRunType(intervals.run_type);
+      setNumIntervals(intervals.num_intervals);
+      setIntervalDuration(intervals.interval_duration_min);
+      setRecoveryDuration(intervals.recovery_duration_min);
+    },
+  });
+
+  // Load cloud session mutation
+  const loadSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const session = await getSession(sessionId);
+      setCSVContent(session.csv_content, sessionId);
+      const metadata = await parseCSV({ csv_content: session.csv_content });
+      const intervals = await detectIntervals({ csv_content: session.csv_content });
       return { metadata, intervals };
     },
     onSuccess: ({ metadata, intervals }) => {
@@ -102,60 +136,153 @@ export function Sidebar() {
     [parseMutation]
   );
 
-  // Get status badge variant
-  const getStatusVariant = (status: IntervalStatus) => {
-    switch (status) {
-      case IntervalStatus.BELOW_THRESHOLD:
-        return "success";
-      case IntervalStatus.BORDERLINE:
-        return "warning";
-      case IntervalStatus.ABOVE_THRESHOLD:
-        return "danger";
-      default:
-        return "default";
+  // Handle session selection
+  const handleSessionSelect = useCallback(
+    (sessionId: string) => {
+      setSelectedSessionId(sessionId);
+      loadSessionMutation.mutate(sessionId);
+    },
+    [loadSessionMutation]
+  );
+
+  // Reset session selection when switching data source
+  useEffect(() => {
+    setSelectedSessionId(null);
+  }, [dataSource]);
+
+  // Format session date for display
+  const formatSessionDate = (isoDate: string) => {
+    try {
+      const date = new Date(isoDate);
+      return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return isoDate;
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* File Upload */}
+      {/* Data Source Toggle */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Upload CSV</CardTitle>
+          <CardTitle className="text-sm">Data Source</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="csv-upload"
-            />
-            <label htmlFor="csv-upload">
-              <Button
-                variant="outline"
-                className="w-full cursor-pointer"
-                asChild
-              >
-                <span>
-                  {fileName ? fileName : "Choose file..."}
-                </span>
-              </Button>
-            </label>
-            {parseMutation.isPending && (
-              <p className="text-xs text-muted-foreground">Parsing...</p>
-            )}
-            {csvMetadata && (
-              <div className="text-xs text-muted-foreground">
-                <p>Format: {csvMetadata.format}</p>
-                <p>Breaths: {csvMetadata.total_breaths}</p>
-                <p>Duration: {formatTime(csvMetadata.duration_seconds)}</p>
-              </div>
-            )}
+          <div className="flex gap-2">
+            <Button
+              variant={dataSource === "local" ? "default" : "outline"}
+              size="sm"
+              className="flex-1"
+              onClick={() => setDataSource("local")}
+            >
+              Local File
+            </Button>
+            <Button
+              variant={dataSource === "cloud" ? "default" : "outline"}
+              size="sm"
+              className="flex-1"
+              onClick={() => setDataSource("cloud")}
+            >
+              Cloud
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Local File Upload */}
+      {dataSource === "local" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Upload CSV</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="csv-upload"
+              />
+              <label htmlFor="csv-upload">
+                <Button
+                  variant="outline"
+                  className="w-full cursor-pointer"
+                  asChild
+                >
+                  <span>{fileName ? fileName : "Choose file..."}</span>
+                </Button>
+              </label>
+              {parseMutation.isPending && (
+                <p className="text-xs text-muted-foreground">Parsing...</p>
+              )}
+              {csvMetadata && (
+                <div className="text-xs text-muted-foreground">
+                  <p>Format: {csvMetadata.format}</p>
+                  <p>Breaths: {csvMetadata.total_breaths}</p>
+                  <p>Duration: {formatTime(csvMetadata.duration_seconds)}</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cloud Sessions */}
+      {dataSource === "cloud" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Cloud Sessions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {sessionsQuery.isLoading && (
+                <p className="text-xs text-muted-foreground">Loading sessions...</p>
+              )}
+              {sessionsQuery.isError && (
+                <p className="text-xs text-destructive">
+                  Cloud storage not available. Firebase may not be configured.
+                </p>
+              )}
+              {sessionsQuery.isSuccess && sessionsQuery.data.length === 0 && (
+                <p className="text-xs text-muted-foreground">No sessions found.</p>
+              )}
+              {sessionsQuery.isSuccess && sessionsQuery.data.length > 0 && (
+                <Select
+                  value={selectedSessionId ?? undefined}
+                  onValueChange={handleSessionSelect}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a session..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sessionsQuery.data.map((session: SessionInfo) => (
+                      <SelectItem key={session.session_id} value={session.session_id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{session.filename}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatSessionDate(session.uploaded_at)}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {loadSessionMutation.isPending && (
+                <p className="text-xs text-muted-foreground">Loading session...</p>
+              )}
+              {csvMetadata && (
+                <div className="text-xs text-muted-foreground">
+                  <p>Format: {csvMetadata.format}</p>
+                  <p>Breaths: {csvMetadata.total_breaths}</p>
+                  <p>Duration: {formatTime(csvMetadata.duration_seconds)}</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Run Configuration */}
       {csvContent && (
@@ -183,9 +310,7 @@ export function Sidebar() {
 
             {/* Intervals */}
             <div className="space-y-2">
-              <label className="text-xs text-muted-foreground">
-                Intervals
-              </label>
+              <label className="text-xs text-muted-foreground">Intervals</label>
               <Select
                 value={numIntervals.toString()}
                 onValueChange={(v) => setNumIntervals(parseInt(v))}
@@ -281,65 +406,9 @@ export function Sidebar() {
               <Switch checked={showSlopeLines} onCheckedChange={toggleSlopeLines} />
             </div>
             <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">
-                Show CUSUM
-              </label>
+              <label className="text-xs text-muted-foreground">Show CUSUM</label>
               <Switch checked={showCusum} onCheckedChange={toggleCusum} />
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Results */}
-      {analysisResult && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Results</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {analysisResult.results.map((result) => (
-              <div
-                key={result.interval_num}
-                className={`cursor-pointer rounded-md border p-3 transition-colors ${
-                  selectedIntervalId === result.interval_num
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-muted-foreground"
-                }`}
-                onClick={() => setSelectedInterval(result.interval_num)}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
-                    Interval {result.interval_num}
-                  </span>
-                  <Badge variant={getStatusVariant(result.status)}>
-                    {result.status === IntervalStatus.BELOW_THRESHOLD
-                      ? "Below"
-                      : result.status === IntervalStatus.BORDERLINE
-                        ? "Borderline"
-                        : "Above"}
-                  </Badge>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 text-xs text-muted-foreground">
-                  <div>VE Drift: {result.ve_drift_pct.toFixed(2)}%/min</div>
-                  <div>Peak CUSUM: {result.peak_cusum.toFixed(1)}</div>
-                  {result.speed && <div>Speed: {result.speed.toFixed(1)} mph</div>}
-                </div>
-              </div>
-            ))}
-
-            {/* Cumulative Drift (VT2) */}
-            {analysisResult.cumulative_drift && (
-              <>
-                <Separator className="my-3" />
-                <div className="text-xs">
-                  <p className="font-medium">Cumulative Drift</p>
-                  <p className="text-muted-foreground">
-                    {analysisResult.cumulative_drift.slope_pct.toFixed(2)}%/min
-                    (p={analysisResult.cumulative_drift.pvalue.toFixed(3)})
-                  </p>
-                </div>
-              </>
-            )}
           </CardContent>
         </Card>
       )}

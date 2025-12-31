@@ -16,7 +16,8 @@ import type { EChartsOption } from "echarts";
 
 const COLORS = {
   ve: "#60A5FA", // Blue 400 - chart-ve
-  cusum: "#F87171", // Red 400
+  cusumOk: "#34D399", // Emerald 400 - below threshold
+  cusumAlarm: "#F87171", // Red 400 - above threshold
   slope: "#C084FC", // Purple 400 - chart-slope
   expected: "#6B7280", // Gray 500
   scatter: "rgba(96, 165, 250, 0.5)", // VE scatter dots
@@ -26,7 +27,6 @@ const COLORS = {
   intervalGood: "rgba(52, 211, 153, 0.15)", // status-good with alpha
   intervalWarn: "rgba(251, 191, 36, 0.15)", // status-warn with alpha
   intervalBad: "rgba(248, 113, 113, 0.15)", // status-bad with alpha
-  intervalHover: "rgba(99, 102, 241, 0.25)", // primary with alpha
 };
 
 // =============================================================================
@@ -39,7 +39,6 @@ export function MainChart() {
   const {
     analysisResult,
     selectedIntervalId,
-    hoveredIntervalId,
     showSlopeLines,
     showCusum,
     zoomStart,
@@ -68,7 +67,7 @@ export function MainChart() {
 
     const { breath_data, results, intervals } = analysisResult;
 
-    // Build mark areas for intervals
+    // Build mark areas for intervals (fixed coloring based on status only)
     const markAreas: Array<Array<{ xAxis: number; itemStyle?: { color: string } }>> =
       results.map((result) => {
         const interval = intervals.find(
@@ -76,17 +75,11 @@ export function MainChart() {
         );
         if (!interval) return [];
 
-        const isHighlighted =
-          result.interval_num === selectedIntervalId ||
-          result.interval_num === hoveredIntervalId;
-
         return [
           {
             xAxis: interval.start_time,
             itemStyle: {
-              color: isHighlighted
-                ? COLORS.intervalHover
-                : getIntervalColor(result.status),
+              color: getIntervalColor(result.status),
             },
           },
           {
@@ -95,7 +88,7 @@ export function MainChart() {
         ];
       });
 
-    // Prepare series data - use explicit array for push compatibility
+    // Prepare series data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const series: any[] = [
       // VE Scatter (breath data points)
@@ -142,54 +135,198 @@ export function MainChart() {
       },
     ];
 
-    // Add slope lines for selected interval
+    // Add 2-hinge segment lines for all intervals when slope lines enabled
+    if (showSlopeLines) {
+      let slopeLegendShown = false;
+      results.forEach((result) => {
+        // Build continuous line from segment2 and segment3 (skip segment1 which is ramp-up)
+        const segmentData: Array<[number, number]> = [];
+
+        // Segment 2 (Phase III onset to 2nd hinge)
+        if (result.chart_data.segment2_times && result.chart_data.segment2_ve) {
+          result.chart_data.segment2_times.forEach((t, i) => {
+            segmentData.push([t, result.chart_data.segment2_ve![i]]);
+          });
+        }
+
+        // Segment 3 (2nd hinge to end) - skip first point if overlaps with segment2
+        if (result.chart_data.segment3_times && result.chart_data.segment3_ve) {
+          const startIdx = segmentData.length > 0 ? 1 : 0;
+          result.chart_data.segment3_times.slice(startIdx).forEach((t, i) => {
+            segmentData.push([t, result.chart_data.segment3_ve![startIdx + i]]);
+          });
+        }
+
+        // Add slope line if we have data
+        if (segmentData.length > 0) {
+          series.push({
+            name: slopeLegendShown ? "" : "Slope",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: segmentData,
+            showSymbol: false,
+            lineStyle: {
+              color: COLORS.slope,
+              width: 2,
+            },
+            z: 3,
+          });
+          slopeLegendShown = true;
+        }
+      });
+    }
+
+    // Add slope annotations for selected interval
     if (showSlopeLines && selectedIntervalId !== null) {
       const selectedResult = results.find(
         (r) => r.interval_num === selectedIntervalId
       );
-      if (selectedResult?.chart_data.slope_line_times.length) {
-        series.push({
-          name: "Slope Line",
-          type: "line",
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: selectedResult.chart_data.slope_line_times.map((t, i) => [
-            t,
-            selectedResult.chart_data.slope_line_ve[i],
-          ]),
-          showSymbol: false,
-          lineStyle: {
-            color: COLORS.slope,
-            width: 2,
-            type: "dashed",
-          },
-          z: 3,
-        });
+
+      if (selectedResult) {
+        // Slope1 annotation (segment2 midpoint)
+        if (
+          selectedResult.slope1_pct !== null &&
+          selectedResult.slope1_pct !== undefined &&
+          selectedResult.chart_data.segment2_times?.length &&
+          selectedResult.chart_data.segment2_times.length >= 2
+        ) {
+          const seg2Times = selectedResult.chart_data.segment2_times;
+          const seg2Ve = selectedResult.chart_data.segment2_ve!;
+          const midX = (seg2Times[0] + seg2Times[seg2Times.length - 1]) / 2;
+          const midY = (seg2Ve[0] + seg2Ve[seg2Ve.length - 1]) / 2;
+
+          series.push({
+            type: "scatter",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: [[midX, midY]],
+            symbol: "none",
+            label: {
+              show: true,
+              formatter: `${selectedResult.slope1_pct >= 0 ? "+" : ""}${selectedResult.slope1_pct.toFixed(1)}%/min`,
+              color: COLORS.slope,
+              fontSize: 10,
+              backgroundColor: "rgba(9, 9, 11, 0.8)",
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+            z: 10,
+          });
+        }
+
+        // Slope2 annotation (segment3 midpoint)
+        if (
+          selectedResult.slope2_pct !== null &&
+          selectedResult.slope2_pct !== undefined &&
+          selectedResult.chart_data.segment3_times?.length &&
+          selectedResult.chart_data.segment3_times.length >= 2
+        ) {
+          const seg3Times = selectedResult.chart_data.segment3_times;
+          const seg3Ve = selectedResult.chart_data.segment3_ve!;
+          const midX = (seg3Times[0] + seg3Times[seg3Times.length - 1]) / 2;
+          const midY = (seg3Ve[0] + seg3Ve[seg3Ve.length - 1]) / 2;
+
+          series.push({
+            type: "scatter",
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            data: [[midX, midY]],
+            symbol: "none",
+            label: {
+              show: true,
+              formatter: `${selectedResult.slope2_pct >= 0 ? "+" : ""}${selectedResult.slope2_pct.toFixed(1)}%/min`,
+              color: COLORS.slope,
+              fontSize: 10,
+              backgroundColor: "rgba(9, 9, 11, 0.8)",
+              padding: [2, 4],
+              borderRadius: 2,
+            },
+            z: 10,
+          });
+        }
       }
     }
 
-    // Add CUSUM line for selected interval
+    // Add CUSUM line for selected interval with color change at alarm
     if (showCusum && selectedIntervalId !== null) {
       const selectedResult = results.find(
         (r) => r.interval_num === selectedIntervalId
       );
+
       if (selectedResult?.chart_data.cusum_values.length) {
-        series.push({
-          name: "CUSUM",
-          type: "line",
-          xAxisIndex: 0,
-          yAxisIndex: 1,
-          data: selectedResult.chart_data.time_values.map((t, i) => [
-            t,
-            selectedResult.chart_data.cusum_values[i],
-          ]),
-          showSymbol: false,
-          lineStyle: {
-            color: COLORS.cusum,
-            width: 2,
-          },
-          z: 4,
-        });
+        const timeValues = selectedResult.chart_data.time_values;
+        const cusumValues = selectedResult.chart_data.cusum_values;
+        const threshold = selectedResult.cusum_threshold;
+        const alarmTime = selectedResult.alarm_time;
+
+        // Split CUSUM into segments based on threshold
+        if (alarmTime !== null && alarmTime !== undefined) {
+          // Find index where alarm occurred
+          const alarmIdx = timeValues.findIndex((t) => t >= alarmTime);
+
+          if (alarmIdx > 0) {
+            // Green segment (before alarm)
+            series.push({
+              name: "CUSUM",
+              type: "line",
+              xAxisIndex: 0,
+              yAxisIndex: 1,
+              data: timeValues.slice(0, alarmIdx + 1).map((t, i) => [t, cusumValues[i]]),
+              showSymbol: false,
+              lineStyle: {
+                color: COLORS.cusumOk,
+                width: 2,
+              },
+              z: 4,
+            });
+
+            // Red segment (after alarm)
+            series.push({
+              name: "",
+              type: "line",
+              xAxisIndex: 0,
+              yAxisIndex: 1,
+              data: timeValues.slice(alarmIdx).map((t, i) => [t, cusumValues[alarmIdx + i]]),
+              showSymbol: false,
+              lineStyle: {
+                color: COLORS.cusumAlarm,
+                width: 2,
+              },
+              z: 4,
+            });
+          } else {
+            // All red (alarm from start)
+            series.push({
+              name: "CUSUM",
+              type: "line",
+              xAxisIndex: 0,
+              yAxisIndex: 1,
+              data: timeValues.map((t, i) => [t, cusumValues[i]]),
+              showSymbol: false,
+              lineStyle: {
+                color: COLORS.cusumAlarm,
+                width: 2,
+              },
+              z: 4,
+            });
+          }
+        } else {
+          // No alarm - all green
+          series.push({
+            name: "CUSUM",
+            type: "line",
+            xAxisIndex: 0,
+            yAxisIndex: 1,
+            data: timeValues.map((t, i) => [t, cusumValues[i]]),
+            showSymbol: false,
+            lineStyle: {
+              color: COLORS.cusumOk,
+              width: 2,
+            },
+            z: 4,
+          });
+        }
 
         // Add threshold line
         series.push({
@@ -198,20 +335,12 @@ export function MainChart() {
           xAxisIndex: 0,
           yAxisIndex: 1,
           data: [
-            [
-              selectedResult.chart_data.time_values[0],
-              selectedResult.cusum_threshold,
-            ],
-            [
-              selectedResult.chart_data.time_values[
-                selectedResult.chart_data.time_values.length - 1
-              ],
-              selectedResult.cusum_threshold,
-            ],
+            [timeValues[0], threshold],
+            [timeValues[timeValues.length - 1], threshold],
           ],
           showSymbol: false,
           lineStyle: {
-            color: COLORS.cusum,
+            color: COLORS.cusumAlarm,
             width: 1,
             type: "dotted",
           },
@@ -251,7 +380,7 @@ export function MainChart() {
           const secs = Math.round(time % 60);
           let html = `<div class="font-medium">${mins}:${secs.toString().padStart(2, "0")}</div>`;
           p.forEach((item) => {
-            if (item.seriesName !== "Threshold") {
+            if (item.seriesName && item.seriesName !== "Threshold") {
               html += `<div>${item.seriesName}: ${item.value[1].toFixed(1)}</div>`;
             }
           });
@@ -265,7 +394,7 @@ export function MainChart() {
         textStyle: {
           color: COLORS.text,
         },
-        data: ["VE (Binned)", "CUSUM", "Slope Line"],
+        data: ["VE (Binned)", "CUSUM", "Slope"],
       },
       grid: {
         left: 60,
@@ -328,7 +457,7 @@ export function MainChart() {
           type: "value",
           name: "CUSUM",
           nameTextStyle: {
-            color: COLORS.cusum,
+            color: COLORS.cusumOk,
           },
           position: "right",
           min: 0,
@@ -336,11 +465,11 @@ export function MainChart() {
           show: showCusum,
           axisLine: {
             lineStyle: {
-              color: COLORS.cusum,
+              color: COLORS.cusumOk,
             },
           },
           axisLabel: {
-            color: COLORS.cusum,
+            color: COLORS.cusumOk,
           },
           splitLine: {
             show: false,
@@ -386,7 +515,6 @@ export function MainChart() {
   }, [
     analysisResult,
     selectedIntervalId,
-    hoveredIntervalId,
     showSlopeLines,
     showCusum,
     zoomStart,

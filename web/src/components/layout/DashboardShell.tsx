@@ -9,9 +9,10 @@ interface DashboardShellProps {
   sidebar: ReactNode;
   chart: ReactNode;
   footer?: ReactNode;
+  headerMetrics?: ReactNode;
 }
 
-export function DashboardShell({ sidebar, chart, footer }: DashboardShellProps) {
+export function DashboardShell({ sidebar, chart, footer, headerMetrics }: DashboardShellProps) {
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
@@ -21,19 +22,19 @@ export function DashboardShell({ sidebar, chart, footer }: DashboardShellProps) 
             VT Threshold Analyzer
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Header actions can go here */}
+        <div className="flex items-center gap-2 flex-1 ml-6">
+          {headerMetrics}
         </div>
       </header>
 
-      {/* Main Content - Simplified layout for debugging */}
+      {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <div className="w-80 border-r border-border overflow-y-auto p-4">
           {sidebar}
         </div>
 
-        {/* Chart */}
+        {/* Chart + Footer */}
         <div className="flex-1 flex flex-col">
           <div className="flex-1 overflow-hidden">{chart}</div>
           {footer && (

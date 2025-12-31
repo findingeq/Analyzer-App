@@ -15,6 +15,8 @@ import type {
 // Store State Interface
 // =============================================================================
 
+type DataSource = "local" | "cloud";
+
 interface RunState {
   // File state
   csvContent: string | null;
@@ -40,6 +42,9 @@ interface RunState {
   // Zoom state for chart
   zoomStart: number;
   zoomEnd: number;
+
+  // Cloud state
+  dataSource: DataSource;
 }
 
 // =============================================================================
@@ -71,6 +76,9 @@ interface RunActions {
   setZoomRange: (start: number, end: number) => void;
   resetZoom: () => void;
 
+  // Cloud actions
+  setDataSource: (source: DataSource) => void;
+
   // Reset
   reset: () => void;
 }
@@ -95,6 +103,7 @@ const initialState: RunState = {
   showCusum: true,
   zoomStart: 0,
   zoomEnd: 100,
+  dataSource: "local",
 };
 
 // =============================================================================
@@ -141,6 +150,17 @@ export const useRunStore = create<RunState & RunActions>((set) => ({
   // Zoom actions
   setZoomRange: (zoomStart, zoomEnd) => set({ zoomStart, zoomEnd }),
   resetZoom: () => set({ zoomStart: 0, zoomEnd: 100 }),
+
+  // Cloud actions
+  setDataSource: (dataSource) =>
+    set({
+      dataSource,
+      // Reset file state when switching data source
+      csvContent: null,
+      csvMetadata: null,
+      fileName: null,
+      analysisResult: null,
+    }),
 
   // Reset
   reset: () => set(initialState),

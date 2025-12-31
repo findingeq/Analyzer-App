@@ -127,3 +127,33 @@ export function readFileAsText(file: File): Promise<string> {
     reader.readAsText(file);
   });
 }
+
+// =============================================================================
+// Cloud Sessions API
+// =============================================================================
+
+export interface SessionInfo {
+  session_id: string;
+  filename: string;
+  uploaded_at: string;
+  size_bytes: number;
+}
+
+export interface SessionContent {
+  session_id: string;
+  csv_content: string;
+}
+
+/**
+ * List all cloud sessions from Firebase Storage
+ */
+export async function listSessions(): Promise<SessionInfo[]> {
+  return fetchApi<undefined, SessionInfo[]>("/sessions", "GET");
+}
+
+/**
+ * Get CSV content for a specific cloud session
+ */
+export async function getSession(sessionId: string): Promise<SessionContent> {
+  return fetchApi<undefined, SessionContent>(`/sessions/${encodeURIComponent(sessionId)}`, "GET");
+}
