@@ -92,8 +92,9 @@ class SessionInfo(BaseModel):
     size_bytes: int
 
 
-@app.get("/")
-def root():
+@app.get("/api/health")
+def health():
+    """Health check endpoint for the API."""
     return {"status": "ok", "service": "VT Threshold Analyzer API"}
 
 
@@ -208,6 +209,12 @@ if STATIC_DIR.exists():
     # Mount static assets (JS, CSS, etc.)
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
+    # Root route - serve React app
+    @app.get("/")
+    async def serve_root():
+        """Serve the React SPA at root."""
+        return FileResponse(STATIC_DIR / "index.html")
+
     # Catch-all route for SPA - must be last
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
@@ -223,3 +230,8 @@ if STATIC_DIR.exists():
 
         # Otherwise serve index.html for SPA routing
         return FileResponse(STATIC_DIR / "index.html")
+else:
+    # No frontend build - serve API status at root
+    @app.get("/")
+    def root():
+        return {"status": "ok", "service": "VT Threshold Analyzer API", "frontend": "not built"}
