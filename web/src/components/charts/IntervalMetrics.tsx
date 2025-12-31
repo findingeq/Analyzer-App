@@ -1,9 +1,9 @@
 /**
  * IntervalMetrics Component
- * Displays clickable interval metrics below the chart
+ * Displays clickable interval metrics below the chart, aligned with intervals
  */
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useRunStore } from "@/store/use-run-store";
 import { IntervalStatus } from "@/lib/api-types";
 
@@ -29,6 +29,10 @@ const STATUS_COLORS = {
   },
 };
 
+// Chart grid margins (must match MainChart)
+const CHART_LEFT_MARGIN = 60;
+const CHART_RIGHT_MARGIN = 60;
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -37,9 +41,39 @@ export function IntervalMetrics() {
   const {
     analysisResult,
     selectedIntervalId,
+    showCusum,
     setSelectedInterval,
     setZoomRange,
   } = useRunStore();
+
+  // Calculate interval positions as percentages
+  const intervalPositions = useMemo(() => {
+    if (!analysisResult || !analysisResult.intervals.length) return [];
+
+    const breathData = analysisResult.breath_data;
+    if (!breathData.times.length) return [];
+
+    const startTime = breathData.times[0];
+    const endTime = breathData.times[breathData.times.length - 1];
+    const totalDuration = endTime - startTime;
+
+    if (totalDuration <= 0) return [];
+
+    return analysisResult.intervals.map((interval) => {
+      // Calculate center position as percentage of total duration
+      const intervalCenter = (interval.start_time + interval.end_time) / 2;
+      const centerPct = ((intervalCenter - startTime) / totalDuration) * 100;
+
+      // Calculate width as percentage
+      const widthPct = ((interval.end_time - interval.start_time) / totalDuration) * 100;
+
+      return {
+        intervalNum: interval.interval_num,
+        centerPct,
+        widthPct,
+      };
+    });
+  }, [analysisResult]);
 
   // Click handler - select interval and zoom to it
   const handleIntervalClick = useCallback(
@@ -80,39 +114,48 @@ export function IntervalMetrics() {
     return null;
   }
 
+  const rightMargin = showCusum ? CHART_RIGHT_MARGIN : 20;
+
   return (
-    <div className="flex gap-2 p-3 overflow-x-auto">
+    <div
+      className="relative h-24 overflow-hidden"
+      style={{
+        marginLeft: CHART_LEFT_MARGIN,
+        marginRight: rightMargin,
+      }}
+    >
       {analysisResult.results.map((result) => {
         const colors = STATUS_COLORS[result.status] || STATUS_COLORS[IntervalStatus.BELOW_THRESHOLD];
         const isSelected = selectedIntervalId === result.interval_num;
+        const position = intervalPositions.find((p) => p.intervalNum === result.interval_num);
+
+        if (!position) return null;
 
         return (
           <button
             key={result.interval_num}
             onClick={() => handleIntervalClick(result.interval_num)}
             className={`
-              flex-shrink-0 rounded-lg border-2 p-3 transition-all cursor-pointer
+              absolute top-2 transform -translate-x-1/2
+              rounded-lg border-2 px-2 py-1.5 transition-all cursor-pointer
               ${colors.bg} ${colors.border}
-              ${isSelected ? "ring-2 ring-white/30 scale-105" : "hover:scale-102 hover:brightness-110"}
+              ${isSelected ? "ring-2 ring-white/30 scale-105 z-10" : "hover:scale-105 hover:brightness-110 hover:z-10"}
             `}
+            style={{
+              left: `${position.centerPct}%`,
+              maxWidth: `${Math.max(position.widthPct * 0.9, 10)}%`,
+              minWidth: "70px",
+            }}
           >
-            <div className="text-xs font-medium text-zinc-300 mb-1">
+            <div className="text-xs font-medium text-zinc-300">
               Int {result.interval_num}
             </div>
-            <div className="space-y-0.5 text-left">
-              <div className={`text-sm font-semibold ${colors.text}`}>
-                {result.avg_ve.toFixed(1)} L/min
-              </div>
-              <div className="text-xs text-zinc-400">
-                {result.ve_drift_pct >= 0 ? "+" : ""}
-                {result.ve_drift_pct.toFixed(2)}%/min
-              </div>
-              {result.split_slope_ratio !== null &&
-                result.split_slope_ratio !== undefined && (
-                  <div className="text-xs text-zinc-500">
-                    ×{result.split_slope_ratio.toFixed(1)} split
-                  </div>
-                )}
+            <div className={`text-sm font-semibold ${colors.text}`}>
+              {result.avg_ve.toFixed(1)} L/min
+            </div>
+            <div className="text-xs text-zinc-400">
+              {result.ve_drift_pct >= 0 ? "+" : ""}
+              {result.ve_drift_pct.toFixed(2)}%/min
             </div>
           </button>
         );

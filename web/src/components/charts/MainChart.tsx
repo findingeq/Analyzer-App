@@ -104,7 +104,7 @@ export function MainChart() {
           color: COLORS.scatter,
         },
         emphasis: {
-          scale: false,
+          disabled: true,
         },
         z: 1,
       },
@@ -127,6 +127,9 @@ export function MainChart() {
             { offset: 1, color: "rgba(96, 165, 250, 0)" },
           ]),
         },
+        emphasis: {
+          disabled: true,
+        },
         markArea: {
           silent: true,
           data: markAreas,
@@ -135,17 +138,25 @@ export function MainChart() {
       },
     ];
 
-    // Add 2-hinge segment lines for all intervals when slope lines enabled
+    // Add 3-hinge segment lines for all intervals when slope lines enabled
     if (showSlopeLines) {
       let slopeLegendShown = false;
       results.forEach((result) => {
-        // Build continuous line from segment2 and segment3 (skip segment1 which is ramp-up)
+        // Build continuous line from all 3 segments
         const segmentData: Array<[number, number]> = [];
 
-        // Segment 2 (Phase III onset to 2nd hinge)
+        // Segment 1 (ramp-up to Phase III onset)
+        if (result.chart_data.segment1_times && result.chart_data.segment1_ve) {
+          result.chart_data.segment1_times.forEach((t, i) => {
+            segmentData.push([t, result.chart_data.segment1_ve![i]]);
+          });
+        }
+
+        // Segment 2 (Phase III onset to 2nd hinge) - skip first point if overlaps with segment1
         if (result.chart_data.segment2_times && result.chart_data.segment2_ve) {
-          result.chart_data.segment2_times.forEach((t, i) => {
-            segmentData.push([t, result.chart_data.segment2_ve![i]]);
+          const startIdx = segmentData.length > 0 ? 1 : 0;
+          result.chart_data.segment2_times.slice(startIdx).forEach((t, i) => {
+            segmentData.push([t, result.chart_data.segment2_ve![startIdx + i]]);
           });
         }
 
@@ -169,6 +180,9 @@ export function MainChart() {
             lineStyle: {
               color: COLORS.slope,
               width: 2,
+            },
+            emphasis: {
+              disabled: true,
             },
             z: 3,
           });
@@ -278,6 +292,9 @@ export function MainChart() {
                 color: COLORS.cusumOk,
                 width: 2,
               },
+              emphasis: {
+                disabled: true,
+              },
               z: 4,
             });
 
@@ -292,6 +309,9 @@ export function MainChart() {
               lineStyle: {
                 color: COLORS.cusumAlarm,
                 width: 2,
+              },
+              emphasis: {
+                disabled: true,
               },
               z: 4,
             });
@@ -308,6 +328,9 @@ export function MainChart() {
                 color: COLORS.cusumAlarm,
                 width: 2,
               },
+              emphasis: {
+                disabled: true,
+              },
               z: 4,
             });
           }
@@ -323,6 +346,9 @@ export function MainChart() {
             lineStyle: {
               color: COLORS.cusumOk,
               width: 2,
+            },
+            emphasis: {
+              disabled: true,
             },
             z: 4,
           });
@@ -358,7 +384,7 @@ export function MainChart() {
               ?.chart_data.cusum_values ?? [0]),
             results.find((r) => r.interval_num === selectedIntervalId)
               ?.cusum_threshold ?? 100
-          )
+          ) * 2.5  // Scale up to lower amplitude visually
         : 100;
 
     return {
