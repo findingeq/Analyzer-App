@@ -2969,41 +2969,104 @@ def main():
         breath_df = st.session_state.breath_df
         cumulative_drift = st.session_state.cumulative_drift
         
-        # Summary row - simplified to just Run Type, Cumulative Drift (VT2), and Average VE
+        # Summary row - changes based on zoom state
         # Calculate Average VE across all post-blanking periods
         all_avg_ve = [r.avg_ve for r in results if r.avg_ve > 0]
         overall_avg_ve = np.mean(all_avg_ve) if all_avg_ve else 0
 
-        # Show 3 columns if cumulative drift available, otherwise 2
-        if cumulative_drift is not None:
-            col1, col2, col3 = st.columns(3)
-        else:
-            col1, col2 = st.columns(2)
+        selected_idx = st.session_state.selected_interval
 
-        with col1:
-            st.metric("Run Type", run_type.value)
+        if selected_idx is not None and selected_idx < len(results):
+            # ZOOMED IN VIEW - Show Interval X, metrics with labels, classification, and reset button
+            selected_result = results[selected_idx]
+            interval_num = selected_result.interval.interval_num
 
-        if cumulative_drift is not None:
-            with col2:
-                drift_str = f"{cumulative_drift.slope_pct:+.2f}%/min ({cumulative_drift.baseline_ve:.1f} L/min)"
-                st.metric(
-                    "Cumulative Drift",
-                    drift_str,
-                    help="Rate of VE increase across all intervals, expressed as % of baseline VE per minute"
-                )
-            with col3:
-                st.metric(
-                    "Average VE",
-                    f"{overall_avg_ve:.1f} L/min",
-                    help="Mean VE across all post-blanking periods"
-                )
+            # Determine classification text and color
+            if selected_result.status == IntervalStatus.BELOW_THRESHOLD:
+                classification_text = "Below Threshold"
+                classification_color = "#28a745"  # Green
+            elif selected_result.status == IntervalStatus.BORDERLINE:
+                classification_text = "Inconclusive"
+                classification_color = "#ffc107"  # Yellow
+            else:
+                classification_text = "Above Threshold"
+                classification_color = "#dc3545"  # Red
+
+            # Check if ceiling-based (only show Average VE)
+            if selected_result.is_ceiling_based:
+                # Ceiling-based: Interval X, Average VE, Classification, Reset
+                col1, col2, col3, col4 = st.columns([1, 1, 1, 0.5])
+                with col1:
+                    st.metric("Interval", f"Interval {interval_num}")
+                with col2:
+                    st.metric("Average VE", f"{selected_result.avg_ve:.1f} L/min")
+                with col3:
+                    st.markdown(f"<div style='padding-top:28px;'><span style='color:{classification_color};font-weight:600;font-size:1.2rem;'>{classification_text}</span></div>", unsafe_allow_html=True)
+                with col4:
+                    st.markdown("<div style='padding-top:20px;'></div>", unsafe_allow_html=True)
+                    if st.button("Reset", key="reset_zoom", use_container_width=True):
+                        st.session_state.selected_interval = None
+                        st.rerun()
+            else:
+                # Drift-based: Interval X, Average VE, VE Drift, Split Slope, Classification, Reset
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 0.5])
+                with col1:
+                    st.metric("Interval", f"Interval {interval_num}")
+                with col2:
+                    st.metric("Average VE", f"{selected_result.avg_ve:.1f} L/min")
+                with col3:
+                    st.metric("VE Drift", f"{selected_result.ve_drift_pct:+.2f}%/min")
+                with col4:
+                    split_ratio = selected_result.split_slope_ratio if selected_result.split_slope_ratio is not None else 1.0
+                    st.metric("Split Slope", f"{split_ratio:.2f}x")
+                with col5:
+                    st.markdown(f"<div style='padding-top:28px;'><span style='color:{classification_color};font-weight:600;font-size:1.2rem;'>{classification_text}</span></div>", unsafe_allow_html=True)
+                with col6:
+                    st.markdown("<div style='padding-top:20px;'></div>", unsafe_allow_html=True)
+                    if st.button("Reset", key="reset_zoom", use_container_width=True):
+                        st.session_state.selected_interval = None
+                        st.rerun()
         else:
-            with col2:
-                st.metric(
-                    "Average VE",
-                    f"{overall_avg_ve:.1f} L/min",
-                    help="Mean VE across all post-blanking periods"
-                )
+            # ZOOMED OUT VIEW - Show Run Type (with AxB format for VT2), Cumulative Drift, Average VE
+            # Format run type string
+            if run_type == RunType.VT2_INTERVAL and len(intervals) > 1:
+                # Calculate interval duration from first interval (in minutes)
+                first_interval = intervals[0]
+                interval_duration_min = int((first_interval.end_time - first_interval.start_time) / 60)
+                run_type_str = f"VT2 Intervals {len(intervals)}x{interval_duration_min}"
+            else:
+                run_type_str = run_type.value
+
+            # Show 3 columns if cumulative drift available, otherwise 2
+            if cumulative_drift is not None:
+                col1, col2, col3 = st.columns(3)
+            else:
+                col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric("Run Type", run_type_str)
+
+            if cumulative_drift is not None:
+                with col2:
+                    drift_str = f"{cumulative_drift.slope_pct:+.2f}%/min ({cumulative_drift.baseline_ve:.1f} L/min)"
+                    st.metric(
+                        "Cumulative Drift",
+                        drift_str,
+                        help="Rate of VE increase across all intervals, expressed as % of baseline VE per minute"
+                    )
+                with col3:
+                    st.metric(
+                        "Average VE",
+                        f"{overall_avg_ve:.1f} L/min",
+                        help="Mean VE across all post-blanking periods"
+                    )
+            else:
+                with col2:
+                    st.metric(
+                        "Average VE",
+                        f"{overall_avg_ve:.1f} L/min",
+                        help="Mean VE across all post-blanking periods"
+                    )
         
         fig = create_main_chart(
             breath_df, results, intervals, params,
@@ -3013,119 +3076,82 @@ def main():
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # Build interval results table with clickable rows
-        # Inject CSS to remove column and row gaps for seamless row coloring
-        st.markdown("""
-        <style>
-        /* Remove gaps between columns */
-        [data-testid="stHorizontalBlock"] {
-            gap: 0 !important;
-        }
-        /* Remove vertical gaps between rows */
-        [data-testid="stVerticalBlock"] {
-            gap: 0 !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Check if all intervals use ceiling-based analysis
-        all_ceiling_based = all(r.is_ceiling_based for r in results)
-
-        # Check if any interval has speed data
-        has_speed = any(r.speed is not None for r in results)
-
-        # Different table layout for ceiling-based vs drift-based
-        # Headers with tooltips: (display_name, tooltip)
-        header_tooltips = {
-            "#": "Interval number (click to zoom)",
-            "Status": "Classification based on CUSUM and slope analysis",
-            "Peak VE": "Maximum VE recorded during this interval (L/min)",
-            "Avg VE": "Average VE during post-blanking period (L/min)",
-            "Terminal VE": "Average VE in last 60 seconds of interval (L/min)",
-            "Speed": "Running speed (mph)",
-            "VE Drift": "Slope as % of baseline VE per minute (baseline L/min)",
-            "Initial VE": "Average VE during calibration window (L/min)"
-        }
-
-        if all_ceiling_based:
-            # Ceiling-based: #, Status, Peak VE, Avg VE, Terminal VE [, Speed] (no VE Drift, no Initial VE)
-            if has_speed:
-                col_widths = [0.4, 1.4, 0.7, 0.7, 0.8, 0.6]
-                headers = ["#", "Status", "Peak VE", "Avg VE", "Terminal VE", "Speed"]
+        # Clickable metrics beneath chart (only when zoomed out and multiple intervals)
+        if selected_idx is None and len(results) > 1:
+            # Determine font size based on number of intervals
+            num_intervals = len(results)
+            if num_intervals >= 15:
+                font_size = "9px"
+                padding = "4px 2px"
+            elif num_intervals >= 10:
+                font_size = "10px"
+                padding = "5px 3px"
+            elif num_intervals >= 6:
+                font_size = "11px"
+                padding = "6px 4px"
             else:
-                col_widths = [0.4, 1.6, 0.8, 0.8, 0.8]
-                headers = ["#", "Status", "Peak VE", "Avg VE", "Terminal VE"]
-        else:
-            # Drift-based: #, Status, VE Drift, Peak VE, Initial VE, Avg VE, Terminal VE [, Speed]
-            if has_speed:
-                col_widths = [0.4, 1.2, 0.9, 0.6, 0.7, 0.7, 0.8, 0.6]
-                headers = ["#", "Status", "VE Drift", "Peak VE", "Initial VE", "Avg VE", "Terminal VE", "Speed"]
-            else:
-                col_widths = [0.4, 1.4, 1.0, 0.6, 0.7, 0.7, 0.8]
-                headers = ["#", "Status", "VE Drift", "Peak VE", "Initial VE", "Avg VE", "Terminal VE"]
+                font_size = "12px"
+                padding = "8px 6px"
 
-        # Center the table
-        table_left, table_center, table_right = st.columns([0.3, 4, 0.3])
-        with table_center:
-            # Header - add top margin to ensure visibility
-            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-            header_cols = st.columns(col_widths)
-            for i, h in enumerate(headers):
-                tooltip = header_tooltips.get(h, "")
-                header_cols[i].markdown(
-                    f"<div style='font-weight:600;font-size:11px;text-align:center;padding:8px 2px;border-bottom:2px solid #ccc;background:#f5f5f5;cursor:help;' title='{tooltip}'>{h}</div>",
-                    unsafe_allow_html=True
-                )
+            # Create columns for each interval
+            metric_cols = st.columns(num_intervals)
 
-            # Data rows
-            for r in results:
-                # Determine row color
-                if r.status.value == IntervalStatus.BELOW_THRESHOLD.value:
-                    row_color = "#d4edda"
-                elif r.status.value == IntervalStatus.BORDERLINE.value:
-                    row_color = "#fff3cd"
+            for i, r in enumerate(results):
+                # Determine color based on status
+                if r.status == IntervalStatus.BELOW_THRESHOLD:
+                    text_color = "#28a745"  # Green
+                    bg_color = "#d4edda"
+                elif r.status == IntervalStatus.BORDERLINE:
+                    text_color = "#856404"  # Dark yellow for readability
+                    bg_color = "#fff3cd"
                 else:
-                    row_color = "#f8d7da"
+                    text_color = "#dc3545"  # Red
+                    bg_color = "#f8d7da"
 
-                # Create row with container for background
-                row_container = st.container()
-                with row_container:
-                    row_cols = st.columns(col_widths, gap="small")
-
-                    # Column 0: Clickable button
-                    with row_cols[0]:
-                        is_selected = st.session_state.selected_interval == (r.interval.interval_num - 1)
-                        btn_label = f"**{r.interval.interval_num}**" if is_selected else str(r.interval.interval_num)
-                        if st.button(btn_label, key=f"int_{r.interval.interval_num}", use_container_width=True):
-                            if is_selected:
-                                st.session_state.selected_interval = None
-                            else:
-                                st.session_state.selected_interval = r.interval.interval_num - 1
-                            st.rerun()
-
-                    # Cell style
-                    cell = f"background:{row_color};font-size:11px;text-align:center;padding:10px 4px;margin:0;"
-
-                    if all_ceiling_based:
-                        # Ceiling-based columns: Status, Peak, Avg VE, Terminal VE [, Speed]
-                        row_cols[1].markdown(f"<div style='{cell}'>{r.status.value}</div>", unsafe_allow_html=True)
-                        row_cols[2].markdown(f"<div style='{cell}'>{r.peak_ve:.0f}</div>", unsafe_allow_html=True)
-                        row_cols[3].markdown(f"<div style='{cell}'>{r.avg_ve:.0f}</div>", unsafe_allow_html=True)
-                        row_cols[4].markdown(f"<div style='{cell}'>{r.terminal_ve:.0f}</div>", unsafe_allow_html=True)
-                        if has_speed:
-                            speed_str = f"{r.speed:.1f}" if r.speed is not None else "-"
-                            row_cols[5].markdown(f"<div style='{cell}'>{speed_str}</div>", unsafe_allow_html=True)
+                with metric_cols[i]:
+                    # Format metrics string based on ceiling-based vs drift-based
+                    if r.is_ceiling_based:
+                        # Ceiling-based: only show Average VE
+                        metrics_str = f"{r.avg_ve:.0f}"
                     else:
-                        # Drift-based columns: Status, VE Drift, Peak, Initial VE, Avg VE, Terminal VE [, Speed]
-                        row_cols[1].markdown(f"<div style='{cell}'>{r.status.value}</div>", unsafe_allow_html=True)
-                        row_cols[2].markdown(f"<div style='{cell}'>{r.ve_drift_pct:+.1f}% ({r.baseline_ve:.0f})</div>", unsafe_allow_html=True)
-                        row_cols[3].markdown(f"<div style='{cell}'>{r.peak_ve:.0f}</div>", unsafe_allow_html=True)
-                        row_cols[4].markdown(f"<div style='{cell}'>{r.initial_ve:.0f}</div>", unsafe_allow_html=True)
-                        row_cols[5].markdown(f"<div style='{cell}'>{r.avg_ve:.0f}</div>", unsafe_allow_html=True)
-                        row_cols[6].markdown(f"<div style='{cell}'>{r.terminal_ve:.0f}</div>", unsafe_allow_html=True)
-                        if has_speed:
-                            speed_str = f"{r.speed:.1f}" if r.speed is not None else "-"
-                            row_cols[7].markdown(f"<div style='{cell}'>{speed_str}</div>", unsafe_allow_html=True)
+                        # Drift-based: show Average VE / VE Drift% / Split Slope
+                        split_ratio = r.split_slope_ratio if r.split_slope_ratio is not None else 1.0
+                        metrics_str = f"{r.avg_ve:.0f} / {r.ve_drift_pct:+.1f}% / {split_ratio:.1f}x"
+
+                    # Display colored metrics text
+                    st.markdown(
+                        f"<div style='text-align:center;color:{text_color};background:{bg_color};font-size:{font_size};font-weight:600;padding:{padding};border-radius:4px;margin-bottom:2px;'>{metrics_str}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # Small clickable button below
+                    if st.button(
+                        f"▼ {r.interval.interval_num}",
+                        key=f"metric_{r.interval.interval_num}",
+                        use_container_width=True,
+                        help=f"Click to zoom to Interval {r.interval.interval_num}"
+                    ):
+                        st.session_state.selected_interval = r.interval.interval_num - 1
+                        st.rerun()
+
+            # Inject CSS for compact metric buttons
+            st.markdown("""
+                <style>
+                /* Compact styling for interval zoom buttons */
+                div[data-testid="column"] .stButton > button {
+                    font-size: 10px !important;
+                    padding: 2px 4px !important;
+                    min-height: 0 !important;
+                    line-height: 1 !important;
+                    background-color: transparent !important;
+                    border: none !important;
+                    color: #666 !important;
+                }
+                div[data-testid="column"] .stButton > button:hover {
+                    background-color: #f0f0f0 !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
 
     else:
         # No data loaded - show instructions
