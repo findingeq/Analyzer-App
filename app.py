@@ -2981,11 +2981,11 @@ def main():
             selected_result = results[selected_idx]
             interval_num = selected_result.interval.interval_num
 
-            # Determine classification text and color
-            if selected_result.status == IntervalStatus.BELOW_THRESHOLD:
+            # Determine classification text and color (use .value for reliable comparison after session state)
+            if selected_result.status.value == IntervalStatus.BELOW_THRESHOLD.value:
                 classification_text = "Below Threshold"
                 classification_color = "#28a745"  # Green
-            elif selected_result.status == IntervalStatus.BORDERLINE:
+            elif selected_result.status.value == IntervalStatus.BORDERLINE.value:
                 classification_text = "Inconclusive"
                 classification_color = "#ffc107"  # Yellow
             else:
@@ -3037,8 +3037,21 @@ def main():
             else:
                 run_type_str = run_type.value
 
-            # Show 3 columns if cumulative drift available, otherwise 2
+            # For single interval runs, get classification
+            single_interval_classification = None
+            if len(results) == 1:
+                single_result = results[0]
+                if single_result.status.value == IntervalStatus.BELOW_THRESHOLD.value:
+                    single_interval_classification = ("Below Threshold", "#28a745")
+                elif single_result.status.value == IntervalStatus.BORDERLINE.value:
+                    single_interval_classification = ("Inconclusive", "#ffc107")
+                else:
+                    single_interval_classification = ("Above Threshold", "#dc3545")
+
+            # Determine column layout based on available data
             if cumulative_drift is not None:
+                col1, col2, col3 = st.columns(3)
+            elif single_interval_classification is not None:
                 col1, col2, col3 = st.columns(3)
             else:
                 col1, col2 = st.columns(2)
@@ -3060,6 +3073,17 @@ def main():
                         f"{overall_avg_ve:.1f} L/min",
                         help="Mean VE across all post-blanking periods"
                     )
+            elif single_interval_classification is not None:
+                # Single interval: show Average VE and Classification
+                with col2:
+                    st.metric(
+                        "Average VE",
+                        f"{overall_avg_ve:.1f} L/min",
+                        help="Mean VE during post-blanking period"
+                    )
+                with col3:
+                    class_text, class_color = single_interval_classification
+                    st.markdown(f"<div style='padding-top:28px;'><span style='color:{class_color};font-weight:600;font-size:1.2rem;'>{class_text}</span></div>", unsafe_allow_html=True)
             else:
                 with col2:
                     st.metric(
@@ -3097,11 +3121,11 @@ def main():
             metric_cols = st.columns(num_intervals)
 
             for i, r in enumerate(results):
-                # Determine color based on status
-                if r.status == IntervalStatus.BELOW_THRESHOLD:
+                # Determine color based on status (use .value for reliable comparison after session state)
+                if r.status.value == IntervalStatus.BELOW_THRESHOLD.value:
                     text_color = "#28a745"  # Green
                     bg_color = "#d4edda"
-                elif r.status == IntervalStatus.BORDERLINE:
+                elif r.status.value == IntervalStatus.BORDERLINE.value:
                     text_color = "#856404"  # Dark yellow for readability
                     bg_color = "#fff3cd"
                 else:
