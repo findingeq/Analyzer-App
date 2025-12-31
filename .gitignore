@@ -18,3 +18,7 @@ Archive/
 # Uploaded session files (keep .gitkeep)
 uploads/*
 !uploads/.gitkeep
+
+# Firebase credentials (never commit!)
+firebase-credentials.json
+*-credentials.json

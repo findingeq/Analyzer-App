@@ -1,14 +1,16 @@
 """
 FastAPI Upload Endpoint for VT Threshold Analyzer
-Receives CSV uploads from iOS app and stores locally
+Receives CSV uploads from iOS app and stores in Firebase Storage
 """
 
+import os
+import json
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from pathlib import Path
-from datetime import datetime
-import json
+import firebase_admin
+from firebase_admin import credentials, storage
 
 app = FastAPI(title="VT Threshold Analyzer API")
 
@@ -21,9 +23,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Local storage directory
-UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
+# Initialize Firebase
+# In Cloud Run, credentials are passed via environment variable
+# Locally, use the firebase-credentials.json file
+if os.environ.get("FIREBASE_CREDENTIALS"):
+    # Cloud Run: credentials passed as JSON string in env var
+    cred_dict = json.loads(os.environ["FIREBASE_CREDENTIALS"])
+    cred = credentials.Certificate(cred_dict)
+else:
+    # Local development: use credentials file
+    cred_path = os.path.join(os.path.dirname(__file__), "..", "firebase-credentials.json")
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+    else:
+        raise RuntimeError("Firebase credentials not found. Set FIREBASE_CREDENTIALS env var or provide firebase-credentials.json")
+
+# Get bucket name from env or use default pattern
+BUCKET_NAME = os.environ.get("FIREBASE_BUCKET", "vt-threshold-analyzer.firebasestorage.app")
+
+firebase_admin.initialize_app(cred, {"storageBucket": BUCKET_NAME})
+bucket = storage.bucket()
 
 
 class UploadRequest(BaseModel):
@@ -52,25 +71,25 @@ def root():
 @app.post("/api/upload", response_model=UploadResponse)
 def upload_csv(request: UploadRequest):
     """
-    Receive CSV content from iOS app and store locally.
+    Receive CSV content from iOS app and store in Firebase Storage.
     """
     try:
         # Generate unique session ID using timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = f"{timestamp}_{request.filename}"
 
-        # Save CSV file
-        csv_path = UPLOADS_DIR / session_id
-        csv_path.write_text(request.csv_content)
+        # Upload CSV to Firebase Storage
+        csv_blob = bucket.blob(f"sessions/{session_id}")
+        csv_blob.upload_from_string(request.csv_content, content_type="text/csv")
 
-        # Save metadata
+        # Upload metadata
         metadata = {
             "filename": request.filename,
             "uploaded_at": datetime.now().isoformat(),
             "size_bytes": len(request.csv_content)
         }
-        meta_path = UPLOADS_DIR / f"{session_id}.meta.json"
-        meta_path.write_text(json.dumps(metadata, indent=2))
+        meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
+        meta_blob.upload_from_string(json.dumps(metadata), content_type="application/json")
 
         return UploadResponse(
             success=True,
@@ -84,14 +103,18 @@ def upload_csv(request: UploadRequest):
 @app.get("/api/sessions", response_model=list[SessionInfo])
 def list_sessions():
     """
-    List all uploaded sessions.
+    List all uploaded sessions from Firebase Storage.
     """
     sessions = []
 
-    for meta_file in sorted(UPLOADS_DIR.glob("*.meta.json"), reverse=True):
+    # List all metadata files
+    blobs = bucket.list_blobs(prefix="sessions/")
+    meta_blobs = [b for b in blobs if b.name.endswith(".meta.json")]
+
+    for meta_blob in sorted(meta_blobs, key=lambda b: b.name, reverse=True):
         try:
-            metadata = json.loads(meta_file.read_text())
-            session_id = meta_file.stem.replace(".meta", "")
+            metadata = json.loads(meta_blob.download_as_text())
+            session_id = meta_blob.name.replace("sessions/", "").replace(".meta.json", "")
             sessions.append(SessionInfo(
                 session_id=session_id,
                 filename=metadata.get("filename", session_id),
@@ -107,29 +130,30 @@ def list_sessions():
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str):
     """
-    Get CSV content for a specific session.
+    Get CSV content for a specific session from Firebase Storage.
     """
-    csv_path = UPLOADS_DIR / session_id
+    csv_blob = bucket.blob(f"sessions/{session_id}")
 
-    if not csv_path.exists():
+    if not csv_blob.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return {"session_id": session_id, "csv_content": csv_path.read_text()}
+    csv_content = csv_blob.download_as_text()
+    return {"session_id": session_id, "csv_content": csv_content}
 
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session(session_id: str):
     """
-    Delete a session and its metadata.
+    Delete a session and its metadata from Firebase Storage.
     """
-    csv_path = UPLOADS_DIR / session_id
-    meta_path = UPLOADS_DIR / f"{session_id}.meta.json"
+    csv_blob = bucket.blob(f"sessions/{session_id}")
+    meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
 
-    if not csv_path.exists():
+    if not csv_blob.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
-    csv_path.unlink()
-    if meta_path.exists():
-        meta_path.unlink()
+    csv_blob.delete()
+    if meta_blob.exists():
+        meta_blob.delete()
 
     return {"success": True, "message": f"Deleted {session_id}"}

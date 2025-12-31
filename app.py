@@ -3,6 +3,7 @@ VT Threshold Analyzer - Desktop Application
 Analyzes Tymewear VitalPro respiratory data to assess VT1/VT2 compliance
 """
 
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -144,47 +145,39 @@ class CumulativeDriftResult:
 # CLOUD SESSION HELPERS
 # ============================================================================
 
-# Path to uploads directory (relative to this file)
-UPLOADS_DIR = Path(__file__).parent / "uploads"
+import requests
+
+# API URL - change this to your Cloud Run URL after deployment
+# For local development: http://localhost:8000
+# For production: https://your-service-name-xxxxx-uc.a.run.app
+API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 
 def list_cloud_sessions() -> list:
     """
-    List all uploaded sessions from the uploads folder.
+    List all uploaded sessions from the API.
     Returns list of dicts with session_id, filename, uploaded_at.
     """
-    sessions = []
-
-    if not UPLOADS_DIR.exists():
-        return sessions
-
-    for meta_file in sorted(UPLOADS_DIR.glob("*.meta.json"), reverse=True):
-        try:
-            metadata = json.loads(meta_file.read_text())
-            session_id = meta_file.stem.replace(".meta", "")
-            sessions.append({
-                "session_id": session_id,
-                "filename": metadata.get("filename", session_id),
-                "uploaded_at": metadata.get("uploaded_at", ""),
-            })
-        except Exception:
-            continue
-
-    return sessions
+    try:
+        response = requests.get(f"{API_URL}/api/sessions", timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception:
+        return []
 
 
-def load_cloud_session(session_id: str) -> Optional[StringIO]:
+def get_cloud_session_content(session_id: str) -> Optional[str]:
     """
-    Load CSV content from a cloud session.
-    Returns a StringIO object that mimics an uploaded file.
+    Get CSV content for a specific session from the API.
     """
-    csv_path = UPLOADS_DIR / session_id
-
-    if not csv_path.exists():
+    try:
+        response = requests.get(f"{API_URL}/api/sessions/{session_id}", timeout=10)
+        if response.status_code == 200:
+            return response.json().get("csv_content")
         return None
-
-    csv_content = csv_path.read_text()
-    return StringIO(csv_content)
+    except Exception:
+        return None
 
 
 class CloudSessionFile:
@@ -2543,17 +2536,18 @@ def main():
                 )
 
                 if selected_idx > 0:
-                    # Load the selected session
+                    # Load the selected session from API
                     session = cloud_sessions[selected_idx - 1]
-                    csv_path = UPLOADS_DIR / session['session_id']
+                    csv_content = get_cloud_session_content(session['session_id'])
 
-                    if csv_path.exists():
-                        csv_content = csv_path.read_text()
+                    if csv_content:
                         uploaded_file = CloudSessionFile(
                             session['session_id'],
                             session['filename'],
                             csv_content
                         )
+                    else:
+                        st.error("Failed to load session from cloud")
 
         if uploaded_file is not None:
             # Create unique file identifier using name + size
