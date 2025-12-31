@@ -2981,11 +2981,11 @@ def main():
             selected_result = results[selected_idx]
             interval_num = selected_result.interval.interval_num
 
-            # Determine classification text and color
-            if selected_result.status == IntervalStatus.BELOW_THRESHOLD:
+            # Determine classification text and color (use .value for reliable comparison after session state)
+            if selected_result.status.value == IntervalStatus.BELOW_THRESHOLD.value:
                 classification_text = "Below Threshold"
                 classification_color = "#28a745"  # Green
-            elif selected_result.status == IntervalStatus.BORDERLINE:
+            elif selected_result.status.value == IntervalStatus.BORDERLINE.value:
                 classification_text = "Inconclusive"
                 classification_color = "#ffc107"  # Yellow
             else:
