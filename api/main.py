@@ -13,8 +13,6 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import firebase_admin
-from firebase_admin import credentials, storage
 
 # Import routers
 from .routers import files_router, analysis_router
@@ -38,26 +36,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Firebase
+# Initialize Firebase (optional for local development)
 # In Cloud Run, credentials are passed via environment variable
 # Locally, use the firebase-credentials.json file
-if os.environ.get("FIREBASE_CREDENTIALS"):
-    # Cloud Run: credentials passed as JSON string in env var
-    cred_dict = json.loads(os.environ["FIREBASE_CREDENTIALS"])
-    cred = credentials.Certificate(cred_dict)
-else:
-    # Local development: use credentials file
-    cred_path = os.path.join(os.path.dirname(__file__), "..", "firebase-credentials.json")
-    if os.path.exists(cred_path):
-        cred = credentials.Certificate(cred_path)
+bucket = None
+FIREBASE_ENABLED = False
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, storage
+
+    if os.environ.get("FIREBASE_CREDENTIALS"):
+        # Cloud Run: credentials passed as JSON string in env var
+        cred_dict = json.loads(os.environ["FIREBASE_CREDENTIALS"])
+        cred = credentials.Certificate(cred_dict)
+        BUCKET_NAME = os.environ.get("FIREBASE_BUCKET", "vt-threshold-analyzer.firebasestorage.app")
+        firebase_admin.initialize_app(cred, {"storageBucket": BUCKET_NAME})
+        bucket = storage.bucket()
+        FIREBASE_ENABLED = True
     else:
-        raise RuntimeError("Firebase credentials not found. Set FIREBASE_CREDENTIALS env var or provide firebase-credentials.json")
-
-# Get bucket name from env or use default pattern
-BUCKET_NAME = os.environ.get("FIREBASE_BUCKET", "vt-threshold-analyzer.firebasestorage.app")
-
-firebase_admin.initialize_app(cred, {"storageBucket": BUCKET_NAME})
-bucket = storage.bucket()
+        # Local development: use credentials file if available
+        cred_path = os.path.join(os.path.dirname(__file__), "..", "firebase-credentials.json")
+        if os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+            BUCKET_NAME = os.environ.get("FIREBASE_BUCKET", "vt-threshold-analyzer.firebasestorage.app")
+            firebase_admin.initialize_app(cred, {"storageBucket": BUCKET_NAME})
+            bucket = storage.bucket()
+            FIREBASE_ENABLED = True
+        else:
+            print("⚠️  Firebase credentials not found. Cloud storage endpoints disabled.")
+            print("   Analysis endpoints will still work for local development.")
+except ImportError:
+    print("⚠️  firebase-admin not installed. Cloud storage endpoints disabled.")
 
 
 class UploadRequest(BaseModel):
@@ -88,6 +98,8 @@ def upload_csv(request: UploadRequest):
     """
     Receive CSV content from iOS app and store in Firebase Storage.
     """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
     try:
         # Generate unique session ID using timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -120,6 +132,8 @@ def list_sessions():
     """
     List all uploaded sessions from Firebase Storage.
     """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
     sessions = []
 
     # List all metadata files
@@ -147,6 +161,8 @@ def get_session(session_id: str):
     """
     Get CSV content for a specific session from Firebase Storage.
     """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
     csv_blob = bucket.blob(f"sessions/{session_id}")
 
     if not csv_blob.exists():
@@ -161,6 +177,8 @@ def delete_session(session_id: str):
     """
     Delete a session and its metadata from Firebase Storage.
     """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
     csv_blob = bucket.blob(f"sessions/{session_id}")
     meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
 
