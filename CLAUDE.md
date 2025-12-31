@@ -1,5 +1,45 @@
 # Project Rules
 
+## Active Development Branch
+**Branch:** `claude/modern-web-interface-7vbdH`
+**Status:** In Progress - React frontend replacing Streamlit
+
+Always checkout this branch at the start of a new conversation:
+```bash
+git checkout claude/modern-web-interface-7vbdH
+git pull origin claude/modern-web-interface-7vbdH
+```
+
+## Feature Status (React Frontend vs Streamlit)
+
+### Implemented in React:
+- [x] Basic dashboard layout with sidebar and chart
+- [x] CSV file upload (local only)
+- [x] VE binned line with gradient
+- [x] Breath scatter dots
+- [x] Interval shading (colored by status)
+- [x] Single slope line
+- [x] CUSUM line (fixed color)
+- [x] Results display in sidebar
+
+### Missing in React (exists in Streamlit app.py):
+- [ ] **2-Hinge Model Display:** Segment 2 + Segment 3 lines (purple)
+- [ ] **Slope Annotations:** %/min labels on each segment
+- [ ] **Grey Recovery Shading:** Between intervals
+- [ ] **Yellow Ramp-up Shading:** Before Phase III onset
+- [ ] **Chart Labels:** "Rest", "Int X", "Ramp" with durations
+- [ ] **Below-Chart Metrics:** Clickable "Avg VE / Drift% / Split Slope" for each interval
+- [ ] **Header Metrics:** "VT2 Intervals 4x10" format, cumulative drift display
+- [ ] **Zoomed-in View:** Interval details with Reset button
+- [ ] **Cloud Integration:** List/fetch sessions from Firebase
+- [ ] **CUSUM Color Change:** Green→Red when in alarm
+
+### Backend API Status:
+- [x] CSV parsing (`/api/files/parse`)
+- [x] Interval detection (`/api/files/detect-intervals`)
+- [x] CUSUM analysis (`/api/analysis/run`)
+- [x] Firebase cloud storage (`/api/sessions`, `/api/upload`)
+
 ## General Behavior
 1. When user provides any instructions, carefully evaluate whether the instructions are logical and appropriate given the overall purpose of the app. If the instructions are not clear, ask clarifying questions.
 2. Do not code anything automatically. Always ask for permission first before coding.
