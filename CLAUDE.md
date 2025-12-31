@@ -14,3 +14,6 @@
 - Zoom buttons must always be within the applicable row, never below the table
 - Keep interface simple during testing phase
 - Use st.columns for table layouts with CSS gap removal
+
+## End of Session
+- Always remind user to merge the branch to main via GitHub PR before ending the chat
