@@ -141,11 +141,19 @@ def analyze_interval_segmented(
         phase3_onset_rel = tau
         phase3_onset_time = tau + breath_times_raw[0]
 
-    # Generate segment 1 line
+    # Generate segment 1 line - anchor to actual data at start
     seg1_t_start = bin_times_rel[0]
     seg1_t_end = phase3_onset_rel
     segment1_times_rel = np.array([seg1_t_start, seg1_t_end])
-    segment1_ve = b0 + b1 * segment1_times_rel
+
+    # Use actual VE at start instead of model prediction
+    start_ve = ve_binned[0]
+    model_ve_at_start = b0 + b1 * seg1_t_start
+    model_ve_at_end = b0 + b1 * seg1_t_end
+
+    # Shift the line to pass through the actual start point
+    offset = start_ve - model_ve_at_start
+    segment1_ve = np.array([start_ve, model_ve_at_end + offset])
 
     # Set calibration window
     if run_type == RunType.VT1_STEADY:
@@ -274,13 +282,26 @@ def analyze_interval_segmented(
 
         split_slope_ratio = slope2_pct / slope1_for_ratio
 
+        # Find actual VE value at phase3_onset from binned data (anchor point)
+        # Use the closest bin to phase3_onset
+        phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
+        anchor_ve = ve_binned[phase3_idx]
+
+        # Compute the model's prediction at phase3_onset
+        model_ve_at_phase3 = h2_b0 + h2_b1 * phase3_onset_rel + h2_b2 * max(0, phase3_onset_rel - hinge2_time_rel)
+
+        # Calculate offset to shift model to pass through anchor point
+        ve_offset = anchor_ve - model_ve_at_phase3
+
+        # Generate segment lines with offset applied
         segment2_times_rel = np.array([phase3_onset_rel, hinge2_time_rel])
-        segment2_ve = h2_b0 + h2_b1 * segment2_times_rel + h2_b2 * np.maximum(0, segment2_times_rel - hinge2_time_rel)
+        segment2_ve = ve_offset + h2_b0 + h2_b1 * segment2_times_rel + h2_b2 * np.maximum(0, segment2_times_rel - hinge2_time_rel)
 
         segment3_times_rel = np.array([hinge2_time_rel, interval_end_rel])
-        segment3_ve = h2_b0 + h2_b1 * segment3_times_rel + h2_b2 * np.maximum(0, segment3_times_rel - hinge2_time_rel)
+        segment3_ve = ve_offset + h2_b0 + h2_b1 * segment3_times_rel + h2_b2 * np.maximum(0, segment3_times_rel - hinge2_time_rel)
 
-        segment1_ve[-1] = segment2_ve[0]
+        # Make segment1 end at the anchor point
+        segment1_ve[-1] = anchor_ve
 
     # Last 60s and 30s averages
     interval_duration = bin_times_rel[-1] if len(bin_times_rel) > 0 else 0
