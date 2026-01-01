@@ -311,6 +311,36 @@ def delete_session(session_id: str):
     return {"success": True, "message": f"Deleted {session_id}"}
 
 
+@app.get("/api/sessions/{session_id}/debug")
+def debug_session(session_id: str):
+    """
+    Debug endpoint: Get first 20 lines of a cloud session CSV for comparison.
+    """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
+    csv_blob = bucket.blob(f"sessions/{session_id}")
+    meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
+
+    if not csv_blob.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    csv_content = csv_blob.download_as_text()
+    lines = csv_content.split('\n')[:20]
+
+    # Get metadata too
+    metadata = None
+    if meta_blob.exists():
+        metadata = json.loads(meta_blob.download_as_text())
+
+    return {
+        "session_id": session_id,
+        "first_20_lines": lines,
+        "total_lines": len(csv_content.split('\n')),
+        "total_bytes": len(csv_content),
+        "metadata": metadata
+    }
+
+
 # =============================================================================
 # Static File Serving for React Frontend
 # =============================================================================
