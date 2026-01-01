@@ -650,7 +650,7 @@ export function MainChart() {
   useEffect(() => {
     if (chartRef.current && chartOptions) {
       chartRef.current.setOption(chartOptions, {
-        notMerge: false,
+        notMerge: true,  // Replace all options to clear old series when switching files
         lazyUpdate: true,
       });
     }
