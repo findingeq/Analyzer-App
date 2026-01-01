@@ -386,6 +386,12 @@ export function MainChart() {
       });
     }
 
+    // Calculate x-axis range based on intervals (to span full width)
+    const firstIntervalStart = intervals.length > 0 ? intervals[0].start_time : breath_data.times[0];
+    const lastIntervalEnd = intervals.length > 0 ? intervals[intervals.length - 1].end_time : breath_data.times[breath_data.times.length - 1];
+    const xAxisMin = firstIntervalStart;
+    const xAxisMax = lastIntervalEnd;
+
     // Calculate max values for Y axes
     const maxVE = Math.max(...breath_data.ve_median, 100);
     // Calculate max CUSUM across all intervals
@@ -467,6 +473,8 @@ export function MainChart() {
         nameTextStyle: {
           color: COLORS.text,
         },
+        min: xAxisMin,
+        max: xAxisMax,
         axisLine: {
           lineStyle: {
             color: COLORS.gridLine,
