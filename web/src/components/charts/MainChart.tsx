@@ -656,16 +656,24 @@ export function MainChart() {
     }
   }, [chartOptions, chartRef]);
 
-  // Empty state - show startup screen
-  if (!analysisResult) {
-    return (
-      <div className="h-full w-full bg-background overflow-auto">
-        <StartupScreen />
-      </div>
-    );
-  }
-
-  return <div ref={containerRef} className="h-full w-full" />;
+  // Always render chart container so it's available for initialization
+  // Show StartupScreen overlay when no analysis result
+  return (
+    <div className="h-full w-full relative">
+      {/* Chart container - always rendered so ref is stable */}
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        style={{ visibility: analysisResult ? 'visible' : 'hidden' }}
+      />
+      {/* Startup screen overlay when no data */}
+      {!analysisResult && (
+        <div className="absolute inset-0 bg-background overflow-auto">
+          <StartupScreen />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default MainChart;
