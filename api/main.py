@@ -311,6 +311,48 @@ def delete_session(session_id: str):
     return {"success": True, "message": f"Deleted {session_id}"}
 
 
+@app.get("/api/storage/list")
+def list_all_blobs():
+    """
+    Debug endpoint: List all blobs in Firebase Storage to see folder structure.
+    """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
+
+    all_blobs = []
+    for blob in bucket.list_blobs():
+        all_blobs.append({
+            "name": blob.name,
+            "size": blob.size,
+            "updated": blob.updated.isoformat() if blob.updated else None
+        })
+
+    return {"blobs": all_blobs, "total": len(all_blobs)}
+
+
+@app.get("/api/storage/download/{path:path}")
+def download_blob(path: str):
+    """
+    Debug endpoint: Download any blob by path.
+    """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
+
+    blob = bucket.blob(path)
+    if not blob.exists():
+        raise HTTPException(status_code=404, detail=f"Blob not found: {path}")
+
+    content = blob.download_as_text()
+    lines = content.split('\n')
+
+    return {
+        "path": path,
+        "first_20_lines": lines[:20],
+        "total_lines": len(lines),
+        "total_bytes": len(content)
+    }
+
+
 @app.get("/api/sessions/{session_id}/debug")
 def debug_session(session_id: str):
     """
