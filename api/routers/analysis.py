@@ -63,12 +63,22 @@ def run_analysis(request: AnalysisRequest):
         detected_phase3_onset = None
 
         for i, interval in enumerate(intervals):
-            # Get speed for this interval (from iOS metadata if available)
+            # Get speed for this interval
             speed = None
+
+            # First try: from iOS metadata (comma-separated speeds)
             if run_params and 'speeds' in run_params:
                 speeds = run_params['speeds']
                 if i < len(speeds):
                     speed = speeds[i]
+
+            # Second try: compute from per-breath speed column if available
+            if speed is None and 'speed' in breath_df.columns:
+                interval_mask = (breath_df['breath_time'] >= interval.start_time) & \
+                               (breath_df['breath_time'] <= interval.end_time)
+                interval_speeds = breath_df.loc[interval_mask, 'speed'].dropna()
+                if len(interval_speeds) > 0:
+                    speed = float(interval_speeds.mean())
 
             # Determine whether to use segmented or ceiling-based analysis
             interval_duration_min = (interval.end_time - interval.start_time) / 60.0

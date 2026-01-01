@@ -395,12 +395,20 @@ export function MainChart() {
 
     // Calculate max values for Y axes
     const maxVE = Math.max(...breath_data.ve_median, 100);
+
     // Calculate max CUSUM across all intervals
+    // Scale CUSUM so peak appears at around 50 on the VE scale (visual height)
     const allCusumValues = results.flatMap((r) => r.chart_data.cusum_values);
     const allThresholds = results.map((r) => r.cusum_threshold);
-    const maxCusum = allCusumValues.length > 0
-      ? Math.max(...allCusumValues, ...allThresholds) * 1.5
+    const peakCusum = allCusumValues.length > 0
+      ? Math.max(...allCusumValues, ...allThresholds)
       : 100;
+
+    // Scale so peak CUSUM appears at 50 VE visually
+    // Formula: (peakCusum / maxCusum) * maxVE = 50
+    // So: maxCusum = peakCusum * maxVE / 50
+    const targetVisualHeight = 50; // Peak CUSUM should appear at this VE level
+    const maxCusum = (peakCusum * Math.ceil(maxVE * 1.1)) / targetVisualHeight;
 
     return {
       backgroundColor: COLORS.background,
@@ -527,7 +535,7 @@ export function MainChart() {
           },
           position: "right",
           min: 0,
-          max: Math.ceil(maxCusum * 1.2),
+          max: Math.ceil(maxCusum),
           show: showCusum,
           axisLine: {
             lineStyle: {
