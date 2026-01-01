@@ -5,10 +5,9 @@
 
 import { useRunStore } from "@/store/use-run-store";
 import { RunType } from "@/lib/api-types";
-import { Button } from "@/components/ui/button";
 
 export function HeaderMetrics() {
-  const { analysisResult, runType, numIntervals, intervalDurationMin, resetZoom, zoomStart, zoomEnd } =
+  const { analysisResult, runType, numIntervals, intervalDurationMin } =
     useRunStore();
 
   // Format run type display (e.g., "VT2 Intervals 4×10")
@@ -22,8 +21,14 @@ export function HeaderMetrics() {
     return `VT2 Intervals ${numIntervals}×${intervalDurationMin}`;
   };
 
-  // Check if zoomed
-  const isZoomed = zoomStart > 0.1 || zoomEnd < 99.9;
+  // Calculate average VE across all intervals
+  const calculateAverageVE = () => {
+    if (!analysisResult?.results?.length) return null;
+    const totalVE = analysisResult.results.reduce((sum, r) => sum + r.avg_ve, 0);
+    return totalVE / analysisResult.results.length;
+  };
+
+  const averageVE = calculateAverageVE();
 
   // No analysis yet
   if (!analysisResult) {
@@ -37,9 +42,19 @@ export function HeaderMetrics() {
   const cumulativeDrift = analysisResult.cumulative_drift;
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-6">
       {/* Run Type Format */}
       <div className="text-sm font-medium text-foreground">{formatRunType()}</div>
+
+      {/* Average VE across all intervals */}
+      {averageVE !== null && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Avg VE:</span>
+          <span className="font-medium text-zinc-300">
+            {averageVE.toFixed(1)} L/min
+          </span>
+        </div>
+      )}
 
       {/* Cumulative Drift (VT2 only) */}
       {cumulativeDrift && (
@@ -61,16 +76,6 @@ export function HeaderMetrics() {
             (p={cumulativeDrift.pvalue.toFixed(3)})
           </span>
         </div>
-      )}
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Reset Zoom Button */}
-      {isZoomed && (
-        <Button variant="outline" size="sm" onClick={resetZoom}>
-          Reset Zoom
-        </Button>
       )}
     </div>
   );

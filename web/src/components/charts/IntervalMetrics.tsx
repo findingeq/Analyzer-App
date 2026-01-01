@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useRunStore } from "@/store/use-run-store";
-import { IntervalStatus } from "@/lib/api-types";
+import { IntervalStatus, RunType } from "@/lib/api-types";
 
 // =============================================================================
 // Color Theme (matches MainChart)
@@ -44,7 +44,15 @@ export function IntervalMetrics() {
     showCusum,
     setSelectedInterval,
     setZoomRange,
+    zoomStart,
+    zoomEnd,
+    resetZoom,
+    runType,
   } = useRunStore();
+
+  // Expected drift thresholds based on run type
+  const expectedDriftThreshold = runType === RunType.VT1_STEADY ? 0.3 : 1.0;
+  const splitSlopeThreshold = 1.2;
 
   // Calculate interval positions as percentages
   const intervalPositions = useMemo(() => {
@@ -75,10 +83,19 @@ export function IntervalMetrics() {
     });
   }, [analysisResult]);
 
-  // Click handler - select interval and zoom to it
+  // Check if currently zoomed
+  const isZoomed = zoomStart > 0.1 || zoomEnd < 99.9;
+
+  // Click handler - select interval and zoom to it, or zoom out if already selected and zoomed
   const handleIntervalClick = useCallback(
     (intervalNum: number) => {
       if (!analysisResult) return;
+
+      // If clicking the already selected interval and zoomed, zoom out
+      if (selectedIntervalId === intervalNum && isZoomed) {
+        resetZoom();
+        return;
+      }
 
       // Select the interval
       setSelectedInterval(intervalNum);
@@ -106,7 +123,7 @@ export function IntervalMetrics() {
         setZoomRange(Math.max(0, startPct), Math.min(100, endPct));
       }
     },
-    [analysisResult, setSelectedInterval, setZoomRange]
+    [analysisResult, setSelectedInterval, setZoomRange, selectedIntervalId, isZoomed, resetZoom]
   );
 
   // Empty state
@@ -128,8 +145,23 @@ export function IntervalMetrics() {
         const colors = STATUS_COLORS[result.status] || STATUS_COLORS[IntervalStatus.BELOW_THRESHOLD];
         const isSelected = selectedIntervalId === result.interval_num;
         const position = intervalPositions.find((p) => p.intervalNum === result.interval_num);
+        const isInactive = isZoomed && !isSelected;
 
         if (!position) return null;
+
+        // Color logic for metrics based on classification thresholds
+        // Avg VE: Green if CUSUM not triggered OR recovered; Red if triggered and not recovered
+        const hasUnrecoveredAlarm = result.alarm_time !== null && result.alarm_time !== undefined && !result.cusum_recovered;
+        const avgVeColor = hasUnrecoveredAlarm ? "text-red-400" : "text-emerald-400";
+
+        // Slope: Green if < expected drift; Red if >= expected drift
+        const slopeColor = Math.abs(result.ve_drift_pct) >= expectedDriftThreshold ? "text-red-400" : "text-emerald-400";
+
+        // Split slope ratio: Green if < 1.2x; Red if >= 1.2x
+        const splitRatio = result.split_slope_ratio;
+        const splitRatioColor = splitRatio !== null && splitRatio !== undefined && splitRatio >= splitSlopeThreshold
+          ? "text-red-400"
+          : "text-emerald-400";
 
         return (
           <button
@@ -140,23 +172,29 @@ export function IntervalMetrics() {
               rounded-lg border-2 px-2 py-1.5 transition-all cursor-pointer
               ${colors.bg} ${colors.border}
               ${isSelected ? "ring-2 ring-white/30 scale-105 z-10" : "hover:scale-105 hover:brightness-110 hover:z-10"}
+              ${isInactive ? "opacity-50 brightness-75" : ""}
             `}
             style={{
               left: `${position.centerPct}%`,
               maxWidth: `${Math.max(position.widthPct * 0.9, 10)}%`,
-              minWidth: "70px",
+              minWidth: "80px",
             }}
           >
             <div className="text-xs font-medium text-zinc-300">
               Int {result.interval_num}
             </div>
-            <div className={`text-sm font-semibold ${colors.text}`}>
+            <div className={`text-sm font-semibold ${avgVeColor}`}>
               {result.avg_ve.toFixed(1)} L/min
             </div>
-            <div className="text-xs text-zinc-400">
+            <div className={`text-xs ${slopeColor}`}>
               {result.ve_drift_pct >= 0 ? "+" : ""}
               {result.ve_drift_pct.toFixed(2)}%/min
             </div>
+            {splitRatio !== null && splitRatio !== undefined && (
+              <div className={`text-xs ${splitRatioColor}`}>
+                {splitRatio.toFixed(2)}x
+              </div>
+            )}
           </button>
         );
       })}
