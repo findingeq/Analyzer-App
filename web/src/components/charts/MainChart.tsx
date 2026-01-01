@@ -438,13 +438,18 @@ export function MainChart() {
     const maxCusum = (peakCusum * Math.ceil(maxVE * 1.1)) / targetVisualHeight;
 
     // Calculate HR range (only if HR data exists)
+    // HR axis maps to UPPER half of chart visually
     const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
     const hrValues = hasHR ? breath_data.hr!.filter((v) => v != null && !isNaN(v)) : [];
     const minHR = hrValues.length > 0 ? Math.min(...hrValues) : 80;
     const maxHR = hrValues.length > 0 ? Math.max(...hrValues) : 180;
-    // Add padding: 10 below min, 10 above max
-    const hrAxisMin = Math.max(0, Math.floor((minHR - 10) / 10) * 10);
-    const hrAxisMax = Math.ceil((maxHR + 10) / 10) * 10;
+    // Scale HR axis so it visually occupies upper half of chart
+    // By setting axis min below actual data, the HR line appears in upper region
+    const hrRange = maxHR - minHR;
+    const hrPadding = Math.max(10, hrRange * 0.1);
+    const hrAxisMax = maxHR + hrPadding;
+    // Set min so that the actual HR data range maps to upper ~50% of chart
+    const hrAxisMin = minHR - hrPadding - hrRange;
 
     return {
       backgroundColor: COLORS.background,
@@ -494,12 +499,13 @@ export function MainChart() {
           const mins = Math.floor(elapsedTime / 60);
           const secs = Math.round(elapsedTime % 60);
 
-          // Build tooltip with only VE and HR
+          // Build tooltip with time, VE, and HR (always show all three)
           let html = `<div class="font-medium">${timeLabel}: ${mins}:${secs.toString().padStart(2, "0")}</div>`;
 
-          // Find VE value (from VE Binned series)
-          const veItem = p.find((item) => item.seriesName === "VE (Binned)");
-          if (veItem) {
+          // Find VE value (try VE Binned first, then VE Breaths)
+          const veItem = p.find((item) => item.seriesName === "VE (Binned)") ||
+                         p.find((item) => item.seriesName === "VE (Breaths)");
+          if (veItem && veItem.value[1] != null) {
             html += `<div style="color: ${COLORS.ve}">VE: ${veItem.value[1].toFixed(1)} L/min</div>`;
           }
 
