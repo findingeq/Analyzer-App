@@ -18,11 +18,11 @@ export function DashboardShell({ sidebar, chart, footer, headerMetrics }: Dashbo
       {/* Header */}
       <header className="flex h-14 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-foreground">
-            VT Threshold Analyzer
+          <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+            VT Check
           </h1>
         </div>
-        <div className="flex items-center gap-2 flex-1 ml-6">
+        <div className="flex-1 flex justify-center">
           {headerMetrics}
         </div>
       </header>

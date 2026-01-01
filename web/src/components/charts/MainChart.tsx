@@ -146,14 +146,14 @@ export function MainChart() {
         const segmentData: Array<[number, number]> = [];
 
         // Segment 1 (ramp-up to Phase III onset)
-        if (result.chart_data.segment1_times && result.chart_data.segment1_ve) {
+        if (result.chart_data.segment1_times?.length && result.chart_data.segment1_ve?.length) {
           result.chart_data.segment1_times.forEach((t, i) => {
             segmentData.push([t, result.chart_data.segment1_ve![i]]);
           });
         }
 
         // Segment 2 (Phase III onset to 2nd hinge) - skip first point if overlaps with segment1
-        if (result.chart_data.segment2_times && result.chart_data.segment2_ve) {
+        if (result.chart_data.segment2_times?.length && result.chart_data.segment2_ve?.length) {
           const startIdx = segmentData.length > 0 ? 1 : 0;
           result.chart_data.segment2_times.slice(startIdx).forEach((t, i) => {
             segmentData.push([t, result.chart_data.segment2_ve![startIdx + i]]);
@@ -161,15 +161,22 @@ export function MainChart() {
         }
 
         // Segment 3 (2nd hinge to end) - skip first point if overlaps with segment2
-        if (result.chart_data.segment3_times && result.chart_data.segment3_ve) {
+        if (result.chart_data.segment3_times?.length && result.chart_data.segment3_ve?.length) {
           const startIdx = segmentData.length > 0 ? 1 : 0;
           result.chart_data.segment3_times.slice(startIdx).forEach((t, i) => {
             segmentData.push([t, result.chart_data.segment3_ve![startIdx + i]]);
           });
         }
 
-        // Add slope line if we have data
-        if (segmentData.length > 0) {
+        // Fallback to combined slope line if segment data is missing
+        if (segmentData.length === 0 && result.chart_data.slope_line_times?.length && result.chart_data.slope_line_ve?.length) {
+          result.chart_data.slope_line_times.forEach((t, i) => {
+            segmentData.push([t, result.chart_data.slope_line_ve[i]]);
+          });
+        }
+
+        // Add slope line if we have data (need at least 2 points to draw a line)
+        if (segmentData.length >= 2) {
           series.push({
             name: slopeLegendShown ? "" : "Slope",
             type: "line",
@@ -262,27 +269,28 @@ export function MainChart() {
       }
     }
 
-    // Add CUSUM line for selected interval with color change at alarm
-    if (showCusum && selectedIntervalId !== null) {
-      const selectedResult = results.find(
-        (r) => r.interval_num === selectedIntervalId
-      );
+    // Add CUSUM lines for all intervals when CUSUM is enabled
+    if (showCusum) {
+      let cusumLegendShown = false;
+      results.forEach((result) => {
+        if (!result.chart_data.cusum_values.length) return;
 
-      if (selectedResult?.chart_data.cusum_values.length) {
-        const timeValues = selectedResult.chart_data.time_values;
-        const cusumValues = selectedResult.chart_data.cusum_values;
-        const threshold = selectedResult.cusum_threshold;
-        const alarmTime = selectedResult.alarm_time;
+        const timeValues = result.chart_data.time_values;
+        const cusumValues = result.chart_data.cusum_values;
+        const threshold = result.cusum_threshold;
+        const alarmTime = result.alarm_time;
+        const hasAlarm = alarmTime !== null && alarmTime !== undefined;
+        const recovered = result.cusum_recovered;
 
         // Split CUSUM into segments based on threshold
-        if (alarmTime !== null && alarmTime !== undefined) {
+        if (hasAlarm) {
           // Find index where alarm occurred
           const alarmIdx = timeValues.findIndex((t) => t >= alarmTime);
 
           if (alarmIdx > 0) {
             // Green segment (before alarm)
             series.push({
-              name: "CUSUM",
+              name: cusumLegendShown ? "" : "CUSUM",
               type: "line",
               xAxisIndex: 0,
               yAxisIndex: 1,
@@ -297,8 +305,9 @@ export function MainChart() {
               },
               z: 4,
             });
+            cusumLegendShown = true;
 
-            // Red segment (after alarm)
+            // Red segment (after alarm) - only red if not recovered
             series.push({
               name: "",
               type: "line",
@@ -307,7 +316,7 @@ export function MainChart() {
               data: timeValues.slice(alarmIdx).map((t, i) => [t, cusumValues[alarmIdx + i]]),
               showSymbol: false,
               lineStyle: {
-                color: COLORS.cusumAlarm,
+                color: recovered ? COLORS.cusumOk : COLORS.cusumAlarm,
                 width: 2,
               },
               emphasis: {
@@ -316,16 +325,16 @@ export function MainChart() {
               z: 4,
             });
           } else {
-            // All red (alarm from start)
+            // All red (alarm from start) - unless recovered
             series.push({
-              name: "CUSUM",
+              name: cusumLegendShown ? "" : "CUSUM",
               type: "line",
               xAxisIndex: 0,
               yAxisIndex: 1,
               data: timeValues.map((t, i) => [t, cusumValues[i]]),
               showSymbol: false,
               lineStyle: {
-                color: COLORS.cusumAlarm,
+                color: recovered ? COLORS.cusumOk : COLORS.cusumAlarm,
                 width: 2,
               },
               emphasis: {
@@ -333,11 +342,12 @@ export function MainChart() {
               },
               z: 4,
             });
+            cusumLegendShown = true;
           }
         } else {
           // No alarm - all green
           series.push({
-            name: "CUSUM",
+            name: cusumLegendShown ? "" : "CUSUM",
             type: "line",
             xAxisIndex: 0,
             yAxisIndex: 1,
@@ -352,11 +362,12 @@ export function MainChart() {
             },
             z: 4,
           });
+          cusumLegendShown = true;
         }
 
-        // Add threshold line
+        // Add threshold line for each interval
         series.push({
-          name: "Threshold",
+          name: "",
           type: "line",
           xAxisIndex: 0,
           yAxisIndex: 1,
@@ -372,20 +383,17 @@ export function MainChart() {
           },
           z: 3,
         });
-      }
+      });
     }
 
     // Calculate max values for Y axes
     const maxVE = Math.max(...breath_data.ve_median, 100);
-    const maxCusum =
-      selectedIntervalId !== null
-        ? Math.max(
-            ...(results.find((r) => r.interval_num === selectedIntervalId)
-              ?.chart_data.cusum_values ?? [0]),
-            results.find((r) => r.interval_num === selectedIntervalId)
-              ?.cusum_threshold ?? 100
-          ) * 2.5  // Scale up to lower amplitude visually
-        : 100;
+    // Calculate max CUSUM across all intervals
+    const allCusumValues = results.flatMap((r) => r.chart_data.cusum_values);
+    const allThresholds = results.map((r) => r.cusum_threshold);
+    const maxCusum = allCusumValues.length > 0
+      ? Math.max(...allCusumValues, ...allThresholds) * 1.5
+      : 100;
 
     return {
       backgroundColor: COLORS.background,
@@ -416,11 +424,34 @@ export function MainChart() {
       legend: {
         show: true,
         top: 10,
-        right: 10,
+        right: 120,
         textStyle: {
           color: COLORS.text,
         },
-        data: ["VE (Binned)", "CUSUM", "Slope"],
+        itemWidth: 20,
+        itemHeight: 2,
+        data: [
+          {
+            name: "VE (Binned)",
+            icon: "rect",
+            itemStyle: { color: COLORS.ve },
+          },
+          {
+            name: "CUSUM",
+            icon: "rect",
+            itemStyle: {
+              // Green if no unrecovered alarms, red if any unrecovered alarm
+              color: results.some((r) => r.alarm_time !== null && r.alarm_time !== undefined && !r.cusum_recovered)
+                ? COLORS.cusumAlarm
+                : COLORS.cusumOk,
+            },
+          },
+          {
+            name: "Slope",
+            icon: "rect",
+            itemStyle: { color: COLORS.slope },
+          },
+        ],
       },
       grid: {
         left: 60,
