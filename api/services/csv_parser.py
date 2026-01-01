@@ -169,6 +169,8 @@ def parse_ios_csv(csv_content: str) -> Tuple[pd.DataFrame, Dict[str, Any], pd.Da
 
     if 'elapsed_sec' in df.columns:
         result['breath_time'] = pd.to_numeric(df['elapsed_sec'], errors='coerce')
+    elif 'elapsed_s' in df.columns:
+        result['breath_time'] = pd.to_numeric(df['elapsed_s'], errors='coerce')
     elif 'elapsed' in df.columns:
         result['breath_time'] = pd.to_numeric(df['elapsed'], errors='coerce')
 
