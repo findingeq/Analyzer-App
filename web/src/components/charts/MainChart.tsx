@@ -8,6 +8,7 @@ import * as echarts from "echarts";
 import { useChartResize } from "@/hooks/use-chart-resize";
 import { useRunStore } from "@/store/use-run-store";
 import { IntervalStatus } from "@/lib/api-types";
+import { StartupScreen } from "@/components/startup/StartupScreen";
 import type { EChartsOption } from "echarts";
 
 // =============================================================================
@@ -640,14 +641,11 @@ export function MainChart() {
     }
   }, [chartOptions, chartRef]);
 
-  // Empty state
+  // Empty state - show startup screen
   if (!analysisResult) {
     return (
-      <div
-        ref={containerRef}
-        className="flex h-full w-full items-center justify-center bg-background text-muted-foreground"
-      >
-        Upload a CSV file to view analysis
+      <div className="h-full w-full bg-background overflow-auto">
+        <StartupScreen />
       </div>
     );
   }

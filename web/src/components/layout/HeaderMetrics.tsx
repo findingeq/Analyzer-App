@@ -28,7 +28,34 @@ export function HeaderMetrics() {
     return totalVE / analysisResult.results.length;
   };
 
+  // Calculate average pace (min/mile) from interval speeds
+  const calculateAveragePace = () => {
+    if (!analysisResult?.results?.length) return null;
+
+    // Get work intervals with valid speeds
+    const speeds = analysisResult.results
+      .filter((r) => r.speed !== null && r.speed !== undefined && r.speed > 0)
+      .map((r) => r.speed as number);
+
+    if (speeds.length === 0) return null;
+
+    // Average speed in mph
+    const avgSpeedMph = speeds.reduce((sum, s) => sum + s, 0) / speeds.length;
+
+    // Convert to min/mile
+    if (avgSpeedMph <= 0) return null;
+    return 60 / avgSpeedMph;
+  };
+
+  // Format pace as "mm:ss"
+  const formatPace = (paceMinPerMile: number) => {
+    const mins = Math.floor(paceMinPerMile);
+    const secs = Math.round((paceMinPerMile - mins) * 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
   const averageVE = calculateAverageVE();
+  const averagePace = calculateAveragePace();
 
   // No analysis yet
   if (!analysisResult) {
@@ -45,6 +72,16 @@ export function HeaderMetrics() {
     <div className="flex items-center gap-6">
       {/* Run Type Format */}
       <div className="text-sm font-medium text-foreground">{formatRunType()}</div>
+
+      {/* Average Pace (if speed data available) */}
+      {averagePace !== null && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Avg Pace:</span>
+          <span className="font-medium text-zinc-300">
+            {formatPace(averagePace)} /mi
+          </span>
+        </div>
+      )}
 
       {/* Average VE across all intervals */}
       {averageVE !== null && (

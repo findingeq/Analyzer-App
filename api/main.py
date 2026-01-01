@@ -12,6 +12,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 
 # Import routers
 from .routers import files_router, analysis_router
+from .services.csv_parser import parse_csv_auto, detect_csv_format
 
 app = FastAPI(
     title="VT Threshold Analyzer API",
@@ -85,11 +87,27 @@ class UploadResponse(BaseModel):
     message: str
 
 
+class SessionSummary(BaseModel):
+    """Summary metadata extracted from CSV for quick loading."""
+    date: Optional[str] = None
+    run_type: Optional[str] = None  # "VT1" or "VT2"
+    vt1_threshold: Optional[float] = None
+    vt2_threshold: Optional[float] = None
+    speed: Optional[float] = None  # Average speed in mph
+    duration_seconds: Optional[float] = None
+    num_intervals: Optional[int] = None
+    interval_duration_min: Optional[float] = None
+    recovery_duration_min: Optional[float] = None
+    intensity: Optional[str] = None  # "Moderate", "Heavy", "Severe"
+    avg_pace_min_per_mile: Optional[float] = None
+
+
 class SessionInfo(BaseModel):
     session_id: str
     filename: str
     uploaded_at: str
     size_bytes: int
+    summary: Optional[SessionSummary] = None
 
 
 @app.get("/api/health")
@@ -98,10 +116,82 @@ def health():
     return {"status": "ok", "service": "VT Threshold Analyzer API"}
 
 
+def _extract_session_summary(csv_content: str) -> dict:
+    """Extract summary metadata from CSV content for quick loading."""
+    summary = {}
+
+    try:
+        breath_df, metadata, power_df, run_params = parse_csv_auto(csv_content)
+
+        # Extract date from metadata or filename
+        if 'date' in metadata:
+            summary['date'] = metadata['date']
+
+        # Get run parameters from iOS CSV
+        if run_params:
+            if 'run_type' in run_params:
+                summary['run_type'] = run_params['run_type'].value if hasattr(run_params['run_type'], 'value') else str(run_params['run_type'])
+            if 'vt1_threshold' in run_params:
+                summary['vt1_threshold'] = run_params['vt1_threshold']
+            if 'vt2_threshold' in run_params:
+                summary['vt2_threshold'] = run_params['vt2_threshold']
+            if 'speeds' in run_params and run_params['speeds']:
+                summary['speed'] = sum(run_params['speeds']) / len(run_params['speeds'])
+            if 'num_intervals' in run_params:
+                summary['num_intervals'] = run_params['num_intervals']
+            if 'interval_duration' in run_params:
+                summary['interval_duration_min'] = run_params['interval_duration']
+            if 'recovery_duration' in run_params:
+                summary['recovery_duration_min'] = run_params['recovery_duration']
+
+        # Calculate duration from breath data
+        if len(breath_df) > 0 and 'breath_time' in breath_df.columns:
+            summary['duration_seconds'] = float(breath_df['breath_time'].max())
+
+        # Calculate average pace (min/mile) from speed (mph)
+        if summary.get('speed') and summary['speed'] > 0:
+            summary['avg_pace_min_per_mile'] = 60.0 / summary['speed']
+
+        # Calculate intensity based on VE vs VT1/VT2 thresholds
+        # This requires analyzing VE data against thresholds
+        vt1 = summary.get('vt1_threshold')
+        vt2 = summary.get('vt2_threshold')
+
+        if vt1 and vt2 and 've_raw' in breath_df.columns:
+            ve_values = breath_df['ve_raw'].dropna().values
+
+            # Exclude recovery periods if phase column exists
+            if 'phase' in breath_df.columns:
+                workout_mask = breath_df['phase'].str.lower().str.contains('workout', na=False)
+                ve_values = breath_df.loc[workout_mask, 've_raw'].dropna().values
+
+            if len(ve_values) > 0:
+                # Count time in each zone (using bin size of ~4 seconds)
+                moderate_count = sum(ve_values <= vt1)
+                heavy_count = sum((ve_values > vt1) & (ve_values <= vt2))
+                severe_count = sum(ve_values > vt2)
+
+                # Determine intensity by majority time
+                max_count = max(moderate_count, heavy_count, severe_count)
+                if max_count == moderate_count:
+                    summary['intensity'] = 'Moderate'
+                elif max_count == heavy_count:
+                    summary['intensity'] = 'Heavy'
+                else:
+                    summary['intensity'] = 'Severe'
+
+    except Exception as e:
+        # If parsing fails, return empty summary
+        print(f"Warning: Could not extract session summary: {e}")
+
+    return summary
+
+
 @app.post("/api/upload", response_model=UploadResponse)
 def upload_csv(request: UploadRequest):
     """
     Receive CSV content from iOS app and store in Firebase Storage.
+    Extracts summary metadata for quick loading on startup screen.
     """
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase storage not configured")
@@ -114,11 +204,15 @@ def upload_csv(request: UploadRequest):
         csv_blob = bucket.blob(f"sessions/{session_id}")
         csv_blob.upload_from_string(request.csv_content, content_type="text/csv")
 
-        # Upload metadata
+        # Extract summary metadata from CSV
+        summary = _extract_session_summary(request.csv_content)
+
+        # Upload metadata with summary
         metadata = {
             "filename": request.filename,
             "uploaded_at": datetime.now().isoformat(),
-            "size_bytes": len(request.csv_content)
+            "size_bytes": len(request.csv_content),
+            "summary": summary
         }
         meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
         meta_blob.upload_from_string(json.dumps(metadata), content_type="application/json")
@@ -135,7 +229,7 @@ def upload_csv(request: UploadRequest):
 @app.get("/api/sessions", response_model=list[SessionInfo])
 def list_sessions():
     """
-    List all uploaded sessions from Firebase Storage.
+    List all uploaded sessions from Firebase Storage with summary metadata.
     """
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase storage not configured")
@@ -149,11 +243,31 @@ def list_sessions():
         try:
             metadata = json.loads(meta_blob.download_as_text())
             session_id = meta_blob.name.replace("sessions/", "").replace(".meta.json", "")
+
+            # Parse summary if available
+            summary_data = metadata.get("summary")
+            summary = None
+            if summary_data:
+                summary = SessionSummary(
+                    date=summary_data.get("date"),
+                    run_type=summary_data.get("run_type"),
+                    vt1_threshold=summary_data.get("vt1_threshold"),
+                    vt2_threshold=summary_data.get("vt2_threshold"),
+                    speed=summary_data.get("speed"),
+                    duration_seconds=summary_data.get("duration_seconds"),
+                    num_intervals=summary_data.get("num_intervals"),
+                    interval_duration_min=summary_data.get("interval_duration_min"),
+                    recovery_duration_min=summary_data.get("recovery_duration_min"),
+                    intensity=summary_data.get("intensity"),
+                    avg_pace_min_per_mile=summary_data.get("avg_pace_min_per_mile")
+                )
+
             sessions.append(SessionInfo(
                 session_id=session_id,
                 filename=metadata.get("filename", session_id),
                 uploaded_at=metadata.get("uploaded_at", ""),
-                size_bytes=metadata.get("size_bytes", 0)
+                size_bytes=metadata.get("size_bytes", 0),
+                summary=summary
             ))
         except Exception:
             continue

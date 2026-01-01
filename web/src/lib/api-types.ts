@@ -121,6 +121,7 @@ export interface IntervalResult {
   initial_ve: number;
   terminal_ve: number;
   last_60s_avg_ve: number;
+  last_30s_avg_ve: number;
 
   // Drift metrics
   ve_drift_rate: number;

@@ -16,7 +16,9 @@ def compute_cumulative_drift(results: List[IntervalResult]) -> Optional[Cumulati
     Compute cumulative drift across all intervals as a segmented polyline.
 
     Only applicable for VT2 interval runs with 2+ intervals.
-    Uses the terminal VE (last 60s average) from each interval as hinge points.
+    Uses the terminal VE from each interval as hinge points:
+    - For ceiling-based intervals: uses last 30s average
+    - For drift-based intervals: uses last 60s average
 
     The cumulative drift is the sum of individual segment slopes, expressed as
     total VE change from first to last interval as % of baseline per minute.
@@ -31,8 +33,12 @@ def compute_cumulative_drift(results: List[IntervalResult]) -> Optional[Cumulati
         return None
 
     # Extract data points: (end_time, terminal_ve) for each interval
+    # Use last_30s for ceiling-based intervals, last_60s for drift-based
     interval_end_times = np.array([r.end_time for r in results])
-    interval_avg_ve = np.array([r.last_60s_avg_ve for r in results])
+    interval_avg_ve = np.array([
+        r.last_30s_avg_ve if r.is_ceiling_based else r.last_60s_avg_ve
+        for r in results
+    ])
 
     # Baseline is interval 1's terminal VE
     baseline_ve = interval_avg_ve[0]

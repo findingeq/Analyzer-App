@@ -4,6 +4,7 @@
  */
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   RunType,
   AnalysisResponse,
@@ -38,6 +39,7 @@ interface RunState {
   hoveredIntervalId: number | null;
   showSlopeLines: boolean;
   showCusum: boolean;
+  sidebarCollapsed: boolean;
 
   // Zoom state for chart
   zoomStart: number;
@@ -45,6 +47,24 @@ interface RunState {
 
   // Cloud state
   dataSource: DataSource;
+
+  // VT Thresholds (persisted)
+  vt1Ceiling: number;
+  vt2Ceiling: number;
+  useThresholdsForAll: boolean;
+
+  // Advanced CUSUM parameters (persisted)
+  advancedParams: {
+    phase3OnsetOverride: number | null;
+    maxDriftVt1: number;
+    maxDriftVt2: number;
+    hMultiplierVt1: number;
+    hMultiplierVt2: number;
+    sigmaPctVt1: number;
+    sigmaPctVt2: number;
+    expectedDriftVt1: number;
+    expectedDriftVt2: number;
+  };
 }
 
 // =============================================================================
@@ -71,6 +91,7 @@ interface RunActions {
   setHoveredInterval: (intervalNum: number | null) => void;
   toggleSlopeLines: () => void;
   toggleCusum: () => void;
+  toggleSidebar: () => void;
 
   // Zoom actions
   setZoomRange: (start: number, end: number) => void;
@@ -79,6 +100,14 @@ interface RunActions {
   // Cloud actions
   setDataSource: (source: DataSource) => void;
 
+  // VT Threshold actions
+  setVt1Ceiling: (value: number) => void;
+  setVt2Ceiling: (value: number) => void;
+  setUseThresholdsForAll: (value: boolean) => void;
+
+  // Advanced params actions
+  setAdvancedParams: (params: Partial<RunState["advancedParams"]>) => void;
+
   // Reset
   reset: () => void;
 }
@@ -86,6 +115,18 @@ interface RunActions {
 // =============================================================================
 // Initial State
 // =============================================================================
+
+const defaultAdvancedParams = {
+  phase3OnsetOverride: null as number | null,
+  maxDriftVt1: 1.0,
+  maxDriftVt2: 3.0,
+  hMultiplierVt1: 5.0,
+  hMultiplierVt2: 5.0,
+  sigmaPctVt1: 7.0,
+  sigmaPctVt2: 4.0,
+  expectedDriftVt1: 0.3,
+  expectedDriftVt2: 1.0,
+};
 
 const initialState: RunState = {
   csvContent: null,
@@ -101,70 +142,107 @@ const initialState: RunState = {
   hoveredIntervalId: null,
   showSlopeLines: true,
   showCusum: true,
+  sidebarCollapsed: false,
   zoomStart: 0,
   zoomEnd: 100,
   dataSource: "local",
+  vt1Ceiling: 100.0,
+  vt2Ceiling: 120.0,
+  useThresholdsForAll: false,
+  advancedParams: defaultAdvancedParams,
 };
 
 // =============================================================================
 // Store Creation
 // =============================================================================
 
-export const useRunStore = create<RunState & RunActions>((set) => ({
-  ...initialState,
+export const useRunStore = create<RunState & RunActions>()(
+  persist(
+    (set) => ({
+      ...initialState,
 
-  // File actions
-  setCSVContent: (content, fileName) =>
-    set({
-      csvContent: content,
-      fileName: fileName ?? null,
-      // Reset analysis when new file is loaded
-      analysisResult: null,
-      selectedIntervalId: null,
-      hoveredIntervalId: null,
+      // File actions
+      setCSVContent: (content, fileName) =>
+        set({
+          csvContent: content,
+          fileName: fileName ?? null,
+          // Reset analysis and zoom when new file is loaded
+          analysisResult: null,
+          selectedIntervalId: null,
+          hoveredIntervalId: null,
+          zoomStart: 0,
+          zoomEnd: 100,
+        }),
+
+      setCSVMetadata: (metadata) => set({ csvMetadata: metadata }),
+
+      // Configuration actions
+      setRunType: (runType) => set({ runType }),
+      setNumIntervals: (numIntervals) => set({ numIntervals }),
+      setIntervalDuration: (intervalDurationMin) => set({ intervalDurationMin }),
+      setRecoveryDuration: (recoveryDurationMin) => set({ recoveryDurationMin }),
+
+      // Analysis actions
+      setAnalysisResult: (analysisResult) =>
+        set({
+          analysisResult,
+          // Auto-select first interval and reset zoom when results arrive
+          selectedIntervalId: analysisResult?.results?.[0]?.interval_num ?? null,
+          zoomStart: 0,
+          zoomEnd: 100,
+        }),
+      setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
+
+      // UI actions
+      setSelectedInterval: (selectedIntervalId) => set({ selectedIntervalId }),
+      setHoveredInterval: (hoveredIntervalId) => set({ hoveredIntervalId }),
+      toggleSlopeLines: () => set((state) => ({ showSlopeLines: !state.showSlopeLines })),
+      toggleCusum: () => set((state) => ({ showCusum: !state.showCusum })),
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+
+      // Zoom actions
+      setZoomRange: (zoomStart, zoomEnd) => set({ zoomStart, zoomEnd }),
+      resetZoom: () => set({ zoomStart: 0, zoomEnd: 100 }),
+
+      // Cloud actions
+      setDataSource: (dataSource) =>
+        set({
+          dataSource,
+          // Reset file state when switching data source
+          csvContent: null,
+          csvMetadata: null,
+          fileName: null,
+          analysisResult: null,
+          zoomStart: 0,
+          zoomEnd: 100,
+        }),
+
+      // VT Threshold actions
+      setVt1Ceiling: (vt1Ceiling) => set({ vt1Ceiling }),
+      setVt2Ceiling: (vt2Ceiling) => set({ vt2Ceiling }),
+      setUseThresholdsForAll: (useThresholdsForAll) => set({ useThresholdsForAll }),
+
+      // Advanced params actions
+      setAdvancedParams: (params) =>
+        set((state) => ({
+          advancedParams: { ...state.advancedParams, ...params },
+        })),
+
+      // Reset
+      reset: () => set(initialState),
     }),
-
-  setCSVMetadata: (metadata) => set({ csvMetadata: metadata }),
-
-  // Configuration actions
-  setRunType: (runType) => set({ runType }),
-  setNumIntervals: (numIntervals) => set({ numIntervals }),
-  setIntervalDuration: (intervalDurationMin) => set({ intervalDurationMin }),
-  setRecoveryDuration: (recoveryDurationMin) => set({ recoveryDurationMin }),
-
-  // Analysis actions
-  setAnalysisResult: (analysisResult) =>
-    set({
-      analysisResult,
-      // Auto-select first interval when results arrive
-      selectedIntervalId: analysisResult?.results?.[0]?.interval_num ?? null,
-    }),
-  setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
-
-  // UI actions
-  setSelectedInterval: (selectedIntervalId) => set({ selectedIntervalId }),
-  setHoveredInterval: (hoveredIntervalId) => set({ hoveredIntervalId }),
-  toggleSlopeLines: () => set((state) => ({ showSlopeLines: !state.showSlopeLines })),
-  toggleCusum: () => set((state) => ({ showCusum: !state.showCusum })),
-
-  // Zoom actions
-  setZoomRange: (zoomStart, zoomEnd) => set({ zoomStart, zoomEnd }),
-  resetZoom: () => set({ zoomStart: 0, zoomEnd: 100 }),
-
-  // Cloud actions
-  setDataSource: (dataSource) =>
-    set({
-      dataSource,
-      // Reset file state when switching data source
-      csvContent: null,
-      csvMetadata: null,
-      fileName: null,
-      analysisResult: null,
-    }),
-
-  // Reset
-  reset: () => set(initialState),
-}));
+    {
+      name: "vt-check-settings",
+      partialize: (state) => ({
+        vt1Ceiling: state.vt1Ceiling,
+        vt2Ceiling: state.vt2Ceiling,
+        useThresholdsForAll: state.useThresholdsForAll,
+        advancedParams: state.advancedParams,
+        sidebarCollapsed: state.sidebarCollapsed,
+      }),
+    }
+  )
+);
 
 // =============================================================================
 // Selectors
