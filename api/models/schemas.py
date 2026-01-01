@@ -84,6 +84,7 @@ class IntervalResult(BaseModel):
     initial_ve: float = Field(description="Initial VE after calibration (L/min)")
     terminal_ve: float = Field(description="Average VE in last 60s (L/min)")
     last_60s_avg_ve: float = Field(description="Last 60s average for cumulative drift")
+    last_30s_avg_ve: float = Field(default=0.0, description="Last 30s average for ceiling CUSUM drift")
 
     # Drift metrics
     ve_drift_rate: float = Field(description="VE drift rate (L/min per minute)")

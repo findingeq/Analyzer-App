@@ -132,11 +132,26 @@ export function readFileAsText(file: File): Promise<string> {
 // Cloud Sessions API
 // =============================================================================
 
+export interface SessionSummary {
+  date?: string | null;
+  run_type?: string | null;
+  vt1_threshold?: number | null;
+  vt2_threshold?: number | null;
+  speed?: number | null;
+  duration_seconds?: number | null;
+  num_intervals?: number | null;
+  interval_duration_min?: number | null;
+  recovery_duration_min?: number | null;
+  intensity?: string | null;
+  avg_pace_min_per_mile?: number | null;
+}
+
 export interface SessionInfo {
   session_id: string;
   filename: string;
   uploaded_at: string;
   size_bytes: number;
+  summary?: SessionSummary | null;
 }
 
 export interface SessionContent {

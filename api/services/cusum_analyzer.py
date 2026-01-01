@@ -37,6 +37,7 @@ def _create_default_result(
         initial_ve=0,
         terminal_ve=0,
         last_60s_avg_ve=0,
+        last_30s_avg_ve=0,
         ve_drift_rate=0,
         ve_drift_pct=0,
         peak_cusum=0,
@@ -281,15 +282,22 @@ def analyze_interval_segmented(
 
         segment1_ve[-1] = segment2_ve[0]
 
-    # Last 60s average
+    # Last 60s and 30s averages
     interval_duration = bin_times_rel[-1] if len(bin_times_rel) > 0 else 0
+
     last_60s_start = max(0, interval_duration - 60)
     last_60s_mask = bin_times_rel >= last_60s_start
-
     if np.sum(last_60s_mask) > 0:
         last_60s_avg_ve = np.mean(ve_binned[last_60s_mask])
     else:
         last_60s_avg_ve = np.mean(ve_binned) if len(ve_binned) > 0 else 0
+
+    last_30s_start = max(0, interval_duration - 30)
+    last_30s_mask = bin_times_rel >= last_30s_start
+    if np.sum(last_30s_mask) > 0:
+        last_30s_avg_ve = np.mean(ve_binned[last_30s_mask])
+    else:
+        last_30s_avg_ve = last_60s_avg_ve  # Fallback to 60s if not enough data
 
     # Classification
     cusum_alarm = peak_cusum >= h
@@ -374,6 +382,7 @@ def analyze_interval_segmented(
         initial_ve=initial_ve,
         terminal_ve=terminal_ve,
         last_60s_avg_ve=last_60s_avg_ve,
+        last_30s_avg_ve=last_30s_avg_ve,
         ve_drift_rate=slope,
         ve_drift_pct=ve_drift_pct,
         peak_cusum=peak_cusum,
@@ -495,15 +504,22 @@ def analyze_interval_ceiling(
         slope_line_times_rel = np.array([])
         slope_line_ve = np.array([])
 
-    # Last 60s average
+    # Last 60s and 30s averages
     interval_duration = bin_times_rel[-1] if len(bin_times_rel) > 0 else 0
+
     last_60s_start = max(0, interval_duration - 60)
     last_60s_mask = bin_times_rel >= last_60s_start
-
     if np.sum(last_60s_mask) > 0:
         last_60s_avg_ve = np.mean(ve_binned[last_60s_mask])
     else:
         last_60s_avg_ve = np.mean(ve_binned) if len(ve_binned) > 0 else 0
+
+    last_30s_start = max(0, interval_duration - 30)
+    last_30s_mask = bin_times_rel >= last_30s_start
+    if np.sum(last_30s_mask) > 0:
+        last_30s_avg_ve = np.mean(ve_binned[last_30s_mask])
+    else:
+        last_30s_avg_ve = last_60s_avg_ve  # Fallback to 60s if not enough data
 
     # Classification
     cusum_alarm = peak_cusum >= h
@@ -550,6 +566,7 @@ def analyze_interval_ceiling(
         initial_ve=initial_ve,
         terminal_ve=terminal_ve,
         last_60s_avg_ve=last_60s_avg_ve,
+        last_30s_avg_ve=last_30s_avg_ve,
         ve_drift_rate=slope,
         ve_drift_pct=ve_drift_pct,
         peak_cusum=peak_cusum,
