@@ -3,13 +3,14 @@
  * Renders the primary VE and CUSUM visualization using ECharts
  */
 
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import * as echarts from "echarts";
 import { useChartResize } from "@/hooks/use-chart-resize";
 import { useRunStore } from "@/store/use-run-store";
 import { IntervalStatus } from "@/lib/api-types";
 import { StartupScreen } from "@/components/startup/StartupScreen";
 import type { EChartsOption } from "echarts";
+import type { AnalysisResponse } from "@/lib/api-types";
 
 // =============================================================================
 // Chart Color Theme
@@ -47,6 +48,10 @@ export function MainChart() {
     setZoomRange,
     setSelectedInterval,
   } = useRunStore();
+
+  // Ref to hold analysisResult for click handler (avoids stale closure)
+  const analysisResultRef = useRef<AnalysisResponse | null>(null);
+  analysisResultRef.current = analysisResult;
 
   // Get status color for interval shading
   const getIntervalColor = useCallback((status: IntervalStatus) => {
@@ -596,7 +601,7 @@ export function MainChart() {
     getIntervalColor,
   ]);
 
-  // Initialize chart
+  // Initialize chart (only once when container mounts)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -617,13 +622,15 @@ export function MainChart() {
     });
 
     // Handle click on chart to select interval
+    // Uses ref to avoid stale closure when analysisResult changes
     chartRef.current.on("click", (params: unknown) => {
       const p = params as { componentType: string; data: number[] };
       if (p.componentType === "series" && p.data) {
         const clickTime = p.data[0];
-        // Find which interval was clicked
-        if (analysisResult) {
-          const clickedInterval = analysisResult.intervals.find(
+        // Find which interval was clicked (use ref for current value)
+        const currentResult = analysisResultRef.current;
+        if (currentResult) {
+          const clickedInterval = currentResult.intervals.find(
             (i) => clickTime >= i.start_time && clickTime <= i.end_time
           );
           if (clickedInterval) {
@@ -637,7 +644,7 @@ export function MainChart() {
       chartRef.current?.dispose();
       chartRef.current = null;
     };
-  }, [containerRef, chartRef, setZoomRange, setSelectedInterval, analysisResult]);
+  }, [containerRef, chartRef, setZoomRange, setSelectedInterval]);
 
   // Update chart when options change
   useEffect(() => {
