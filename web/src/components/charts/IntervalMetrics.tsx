@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useRunStore } from "@/store/use-run-store";
-import { IntervalStatus, RunType } from "@/lib/api-types";
+import { IntervalStatus } from "@/lib/api-types";
 
 // =============================================================================
 // Color Theme (matches MainChart)
@@ -47,27 +47,24 @@ export function IntervalMetrics() {
     zoomStart,
     zoomEnd,
     resetZoom,
-    runType,
   } = useRunStore();
 
-  // Expected drift thresholds based on run type
-  const expectedDriftThreshold = runType === RunType.VT1_STEADY ? 0.3 : 1.0;
+  // Split slope ratio threshold
   const splitSlopeThreshold = 1.2;
 
-  // Calculate interval positions as percentages
+  // Calculate interval positions as percentages (based on interval range, not breath data)
   const intervalPositions = useMemo(() => {
     if (!analysisResult || !analysisResult.intervals.length) return [];
 
-    const breathData = analysisResult.breath_data;
-    if (!breathData.times.length) return [];
-
-    const startTime = breathData.times[0];
-    const endTime = breathData.times[breathData.times.length - 1];
+    const intervals = analysisResult.intervals;
+    // Use interval range for positioning (matches chart x-axis)
+    const startTime = intervals[0].start_time;
+    const endTime = intervals[intervals.length - 1].end_time;
     const totalDuration = endTime - startTime;
 
     if (totalDuration <= 0) return [];
 
-    return analysisResult.intervals.map((interval) => {
+    return intervals.map((interval) => {
       // Calculate center position as percentage of total duration
       const intervalCenter = (interval.start_time + interval.end_time) / 2;
       const centerPct = ((intervalCenter - startTime) / totalDuration) * 100;
@@ -101,24 +98,22 @@ export function IntervalMetrics() {
       setSelectedInterval(intervalNum);
 
       // Find interval bounds for zooming
-      const interval = analysisResult.intervals.find(
-        (i) => i.interval_num === intervalNum
-      );
-      const breathData = analysisResult.breath_data;
+      const intervals = analysisResult.intervals;
+      const interval = intervals.find((i) => i.interval_num === intervalNum);
 
-      if (interval && breathData.times.length > 0) {
-        const totalDuration =
-          breathData.times[breathData.times.length - 1] - breathData.times[0];
-        const padding = totalDuration * 0.02; // 2% padding
+      if (interval && intervals.length > 0) {
+        // Use interval range for zoom calculation (matches chart x-axis)
+        const xAxisStart = intervals[0].start_time;
+        const xAxisEnd = intervals[intervals.length - 1].end_time;
+        const totalDuration = xAxisEnd - xAxisStart;
 
-        // Calculate zoom range as percentages
-        const startPct =
-          ((interval.start_time - breathData.times[0] - padding) /
-            totalDuration) *
-          100;
-        const endPct =
-          ((interval.end_time - breathData.times[0] + padding) / totalDuration) *
-          100;
+        // Find the next interval to include recovery period
+        const nextInterval = intervals.find((i) => i.interval_num === intervalNum + 1);
+        const zoomEndTime = nextInterval ? nextInterval.start_time : interval.end_time;
+
+        // Calculate zoom range - show only this interval and recovery after it
+        const startPct = ((interval.start_time - xAxisStart) / totalDuration) * 100;
+        const endPct = ((zoomEndTime - xAxisStart) / totalDuration) * 100;
 
         setZoomRange(Math.max(0, startPct), Math.min(100, endPct));
       }
@@ -154,9 +149,6 @@ export function IntervalMetrics() {
         const hasUnrecoveredAlarm = result.alarm_time !== null && result.alarm_time !== undefined && !result.cusum_recovered;
         const avgVeColor = hasUnrecoveredAlarm ? "text-red-400" : "text-emerald-400";
 
-        // Slope: Green if < expected drift; Red if >= expected drift
-        const slopeColor = Math.abs(result.ve_drift_pct) >= expectedDriftThreshold ? "text-red-400" : "text-emerald-400";
-
         // Split slope ratio: Green if < 1.2x; Red if >= 1.2x
         const splitRatio = result.split_slope_ratio;
         const splitRatioColor = splitRatio !== null && splitRatio !== undefined && splitRatio >= splitSlopeThreshold
@@ -177,7 +169,7 @@ export function IntervalMetrics() {
             style={{
               left: `${position.centerPct}%`,
               maxWidth: `${Math.max(position.widthPct * 0.9, 10)}%`,
-              minWidth: "80px",
+              minWidth: "70px",
             }}
           >
             <div className="text-xs font-medium text-zinc-300">
@@ -185,10 +177,6 @@ export function IntervalMetrics() {
             </div>
             <div className={`text-sm font-semibold ${avgVeColor}`}>
               {result.avg_ve.toFixed(1)} L/min
-            </div>
-            <div className={`text-xs ${slopeColor}`}>
-              {result.ve_drift_pct >= 0 ? "+" : ""}
-              {result.ve_drift_pct.toFixed(2)}%/min
             </div>
             {splitRatio !== null && splitRatio !== undefined && (
               <div className={`text-xs ${splitRatioColor}`}>

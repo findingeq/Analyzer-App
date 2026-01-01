@@ -9,6 +9,7 @@ Implements two CUSUM analysis approaches:
 from typing import Optional, List
 import numpy as np
 import pandas as pd
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 from ..models.enums import RunType, IntervalStatus
 from ..models.params import AnalysisParams
@@ -473,18 +474,22 @@ def analyze_interval_ceiling(
     final_cusum = cusum[-1] if len(cusum) > 0 else 0
     recovered_threshold = h / 2
 
-    # Slope estimation
+    # LOESS smoothing for ceiling-based analysis (provides curved trend line)
     analysis_mask = bin_times_rel >= params.ceiling_warmup_sec
     n_analysis_points = np.sum(analysis_mask)
 
-    if n_analysis_points >= 3:
-        analysis_times_min = bin_times_min[analysis_mask]
+    if n_analysis_points >= 4:  # Need enough points for LOESS
+        analysis_times = bin_times_rel[analysis_mask]
         analysis_ve = ve_binned[analysis_mask]
-        slope, intercept = fit_single_slope(analysis_times_min, analysis_ve)
-        interval_end_rel = interval.end_time - breath_times_raw[0]
-        slope_line_times_rel = np.array([bin_times_rel[analysis_mask][0], interval_end_rel])
-        slope_line_times_min = slope_line_times_rel / 60.0
-        slope_line_ve = intercept + slope * slope_line_times_min
+
+        # Apply LOESS smoothing with frac=0.4 for gentle smoothing
+        loess_result = lowess(analysis_ve, analysis_times, frac=0.4)
+        slope_line_times_rel = loess_result[:, 0]
+        slope_line_ve = loess_result[:, 1]
+
+        # Calculate slope from linear fit for drift metrics
+        analysis_times_min = analysis_times / 60.0
+        slope, _ = fit_single_slope(analysis_times_min, analysis_ve)
     else:
         slope = 0
         slope_line_times_rel = np.array([])
