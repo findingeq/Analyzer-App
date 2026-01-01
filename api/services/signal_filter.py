@@ -14,46 +14,6 @@ from scipy.ndimage import median_filter
 from ..models.params import AnalysisParams
 
 
-def apply_physiological_clipping(ve_raw: np.ndarray, max_ve: float = 180.0) -> np.ndarray:
-    """
-    Pre-filter: Clip VE values to physiological maximum.
-
-    VE values above 180 L/min are extremely rare even for elite athletes
-    at VO2max. Values above this are almost certainly sensor artifacts.
-    Clipped values are replaced with local median of surrounding values.
-
-    Args:
-        ve_raw: Raw VE values (L/min)
-        max_ve: Maximum physiological VE (default 180 L/min)
-
-    Returns:
-        VE values with extreme outliers replaced
-    """
-    ve_clipped = ve_raw.copy()
-    outlier_mask = ve_clipped > max_ve
-
-    if not np.any(outlier_mask):
-        return ve_clipped
-
-    # Replace outliers with interpolated values from neighbors
-    outlier_indices = np.where(outlier_mask)[0]
-
-    for idx in outlier_indices:
-        # Get neighboring values (up to 5 on each side, excluding outliers)
-        start = max(0, idx - 5)
-        end = min(len(ve_clipped), idx + 6)
-        neighbors = ve_clipped[start:end]
-        valid_neighbors = neighbors[neighbors <= max_ve]
-
-        if len(valid_neighbors) > 0:
-            ve_clipped[idx] = np.median(valid_neighbors)
-        else:
-            # If all neighbors are outliers, use the max_ve cap
-            ve_clipped[idx] = max_ve
-
-    return ve_clipped
-
-
 def apply_median_filter(ve_raw: np.ndarray, window: int = 9) -> np.ndarray:
     """
     Stage 1: Apply rolling median filter in breath domain.
@@ -210,9 +170,8 @@ def apply_hybrid_filtering(
     params: AnalysisParams
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Apply four-stage hybrid filtering pipeline.
+    Apply three-stage hybrid filtering pipeline.
 
-    Pre-filter: Physiological clipping - removes extreme values (>180 L/min)
     Stage 1: Rolling median (breath domain) - removes single-breath outliers/artifacts
     Stage 2: Time binning (time domain) - standardizes accumulation rate
     Stage 3: Hampel filter (time domain) - removes consecutive outlier clusters
@@ -228,11 +187,8 @@ def apply_hybrid_filtering(
         - bin_times: Bin start timestamps
         - ve_binned: Binned VE values after Hampel filtering (for CUSUM analysis)
     """
-    # Pre-filter: Physiological clipping (removes extreme artifacts)
-    ve_clipped = apply_physiological_clipping(ve_raw, max_ve=180.0)
-
     # Stage 1: Median filter (removes single-breath spikes)
-    ve_median = apply_median_filter(ve_clipped, params.median_window)
+    ve_median = apply_median_filter(ve_raw, params.median_window)
 
     # Stage 2: Time binning
     bin_times, ve_binned = apply_time_binning(ve_median, breath_times, params.bin_size)
