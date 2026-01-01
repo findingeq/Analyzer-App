@@ -177,6 +177,7 @@ export interface BreathData {
   ve_median: number[];
   bin_times: number[];
   ve_binned: number[];
+  hr?: number[] | null;
 }
 
 // =============================================================================

@@ -1,14 +1,31 @@
 /**
  * HeaderMetrics Component
  * Displays run type format and cumulative drift in the header
+ * Shows additional interval-specific metrics when zoomed
  */
 
 import { useRunStore } from "@/store/use-run-store";
 import { RunType } from "@/lib/api-types";
 
 export function HeaderMetrics() {
-  const { analysisResult, runType, numIntervals, intervalDurationMin } =
-    useRunStore();
+  const {
+    analysisResult,
+    runType,
+    numIntervals,
+    intervalDurationMin,
+    recoveryDurationMin,
+    selectedIntervalId,
+    zoomStart,
+    zoomEnd,
+  } = useRunStore();
+
+  // Check if we're zoomed in (not at default 0-100 range)
+  const isZoomed = zoomStart !== 0 || zoomEnd !== 100;
+
+  // Get selected interval result
+  const selectedInterval = analysisResult?.results?.find(
+    (r) => r.interval_num === selectedIntervalId
+  );
 
   // Format run type display (e.g., "VT2 Intervals 4×10")
   const formatRunType = () => {
@@ -54,8 +71,22 @@ export function HeaderMetrics() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  // Calculate selected interval's pace
+  const calculateSelectedIntervalPace = () => {
+    if (!selectedInterval?.speed || selectedInterval.speed <= 0) return null;
+    return 60 / selectedInterval.speed;
+  };
+
+  // Calculate selected interval's duration in minutes
+  const calculateSelectedIntervalDuration = () => {
+    if (!selectedInterval) return null;
+    return (selectedInterval.end_time - selectedInterval.start_time) / 60;
+  };
+
   const averageVE = calculateAverageVE();
   const averagePace = calculateAveragePace();
+  const selectedIntervalPace = calculateSelectedIntervalPace();
+  const selectedIntervalDuration = calculateSelectedIntervalDuration();
 
   // No analysis yet
   if (!analysisResult) {
@@ -93,8 +124,8 @@ export function HeaderMetrics() {
         </div>
       )}
 
-      {/* Cumulative Drift (VT2 only) */}
-      {cumulativeDrift && (
+      {/* Cumulative Drift (VT2 only) - hide when zoomed */}
+      {cumulativeDrift && !isZoomed && (
         <div className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Cumulative Drift:</span>
           <span
@@ -113,6 +144,48 @@ export function HeaderMetrics() {
             (p={cumulativeDrift.pvalue.toFixed(3)})
           </span>
         </div>
+      )}
+
+      {/* Zoomed interval metrics */}
+      {isZoomed && selectedInterval && (
+        <>
+          {/* Interval indicator */}
+          <div className="flex items-center gap-2 text-sm border-l border-zinc-700 pl-4">
+            <span className="text-primary font-medium">
+              Interval {selectedIntervalId}
+            </span>
+          </div>
+
+          {/* Interval Duration */}
+          {selectedIntervalDuration !== null && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Duration:</span>
+              <span className="font-medium text-zinc-300">
+                {selectedIntervalDuration.toFixed(1)} min
+              </span>
+            </div>
+          )}
+
+          {/* Recovery Duration (VT2 only) */}
+          {runType === RunType.VT2_INTERVAL && recoveryDurationMin > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Recovery:</span>
+              <span className="font-medium text-zinc-300">
+                {recoveryDurationMin} min
+              </span>
+            </div>
+          )}
+
+          {/* Interval Pace */}
+          {selectedIntervalPace !== null && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Pace:</span>
+              <span className="font-medium text-zinc-300">
+                {formatPace(selectedIntervalPace)} /mi
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -278,6 +278,7 @@ class BreathData(BaseModel):
     ve_median: List[float] = Field(description="Median-filtered VE values")
     bin_times: List[float] = Field(description="Bin timestamps")
     ve_binned: List[float] = Field(description="Binned VE values")
+    hr: Optional[List[float]] = Field(default=None, description="Heart rate values at each breath")
 
 
 class AnalysisResponse(BaseModel):
