@@ -18,8 +18,9 @@ import type { AnalysisResponse } from "@/lib/api-types";
 
 const COLORS = {
   ve: "#60A5FA", // Blue 400 - chart-ve
+  hr: "#F87171", // Red 400 - heart rate
   cusumOk: "#34D399", // Emerald 400 - below threshold
-  cusumAlarm: "#F87171", // Red 400 - above threshold
+  cusumAlarm: "#FB923C", // Orange 400 - above threshold (changed from red)
   slope: "#C084FC", // Purple 400 - chart-slope
   expected: "#6B7280", // Gray 500
   scatter: "rgba(96, 165, 250, 0.5)", // VE scatter dots
@@ -143,6 +144,27 @@ export function MainChart() {
         z: 2,
       },
     ];
+
+    // Add HR line if HR data is available
+    if (breath_data.hr && breath_data.hr.length > 0) {
+      series.push({
+        name: "HR",
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 2, // Use third Y-axis (HR axis)
+        data: breath_data.times.map((t, i) => [t, breath_data.hr![i]]),
+        smooth: false,
+        showSymbol: false,
+        lineStyle: {
+          color: COLORS.hr,
+          width: 1.5,
+        },
+        emphasis: {
+          disabled: true,
+        },
+        z: 2,
+      });
+    }
 
     // Add 3-hinge segment lines for all intervals when slope lines enabled
     if (showSlopeLines) {
@@ -415,6 +437,15 @@ export function MainChart() {
     const targetVisualHeight = 50; // Peak CUSUM should appear at this VE level
     const maxCusum = (peakCusum * Math.ceil(maxVE * 1.1)) / targetVisualHeight;
 
+    // Calculate HR range (only if HR data exists)
+    const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
+    const hrValues = hasHR ? breath_data.hr!.filter((v) => v != null && !isNaN(v)) : [];
+    const minHR = hrValues.length > 0 ? Math.min(...hrValues) : 80;
+    const maxHR = hrValues.length > 0 ? Math.max(...hrValues) : 180;
+    // Add padding: 10 below min, 10 above max
+    const hrAxisMin = Math.max(0, Math.floor((minHR - 10) / 10) * 10);
+    const hrAxisMax = Math.ceil((maxHR + 10) / 10) * 10;
+
     return {
       backgroundColor: COLORS.background,
       animation: true,
@@ -430,14 +461,54 @@ export function MainChart() {
           const p = params as Array<{ seriesName: string; value: number[] }>;
           if (!p.length) return "";
           const time = p[0].value[0];
-          const mins = Math.floor(time / 60);
-          const secs = Math.round(time % 60);
-          let html = `<div class="font-medium">${mins}:${secs.toString().padStart(2, "0")}</div>`;
-          p.forEach((item) => {
-            if (item.seriesName && item.seriesName !== "Threshold") {
-              html += `<div>${item.seriesName}: ${item.value[1].toFixed(1)}</div>`;
+
+          // Determine if time is in an interval or recovery period
+          let timeLabel = "";
+          let elapsedTime = time;
+
+          // Check if within an interval
+          const currentInterval = intervals.find(
+            (i) => time >= i.start_time && time <= i.end_time
+          );
+          if (currentInterval) {
+            // Time within interval - show elapsed time since interval start
+            elapsedTime = time - currentInterval.start_time;
+            timeLabel = `Interval ${currentInterval.interval_num}`;
+          } else {
+            // Check if within a recovery period (between intervals)
+            for (let idx = 0; idx < intervals.length - 1; idx++) {
+              const currentEnd = intervals[idx].end_time;
+              const nextStart = intervals[idx + 1].start_time;
+              if (time > currentEnd && time < nextStart) {
+                elapsedTime = time - currentEnd;
+                timeLabel = `Recovery ${idx + 1}`;
+                break;
+              }
             }
-          });
+            // If still no label, show absolute time
+            if (!timeLabel) {
+              timeLabel = "Time";
+            }
+          }
+
+          const mins = Math.floor(elapsedTime / 60);
+          const secs = Math.round(elapsedTime % 60);
+
+          // Build tooltip with only VE and HR
+          let html = `<div class="font-medium">${timeLabel}: ${mins}:${secs.toString().padStart(2, "0")}</div>`;
+
+          // Find VE value (from VE Binned series)
+          const veItem = p.find((item) => item.seriesName === "VE (Binned)");
+          if (veItem) {
+            html += `<div style="color: ${COLORS.ve}">VE: ${veItem.value[1].toFixed(1)} L/min</div>`;
+          }
+
+          // Find HR value
+          const hrItem = p.find((item) => item.seriesName === "HR");
+          if (hrItem && hrItem.value[1] != null) {
+            html += `<div style="color: ${COLORS.hr}">HR: ${Math.round(hrItem.value[1])} bpm</div>`;
+          }
+
           return html;
         },
       },
@@ -456,11 +527,16 @@ export function MainChart() {
             icon: "rect",
             itemStyle: { color: COLORS.ve },
           },
+          ...(hasHR ? [{
+            name: "HR",
+            icon: "rect",
+            itemStyle: { color: COLORS.hr },
+          }] : []),
           {
             name: "CUSUM",
             icon: "rect",
             itemStyle: {
-              // Green if no unrecovered alarms, red if any unrecovered alarm
+              // Green if no unrecovered alarms, orange if any unrecovered alarm
               color: results.some((r) => r.alarm_time !== null && r.alarm_time !== undefined && !r.cusum_recovered)
                 ? COLORS.cusumAlarm
                 : COLORS.cusumOk,
@@ -475,7 +551,7 @@ export function MainChart() {
       },
       grid: {
         left: 60,
-        right: showCusum ? 60 : 20,
+        right: hasHR ? 110 : (showCusum ? 60 : 20),
         top: 50,
         bottom: 80,
       },
@@ -542,6 +618,7 @@ export function MainChart() {
           min: 0,
           max: Math.ceil(maxCusum),
           show: showCusum,
+          offset: hasHR ? 50 : 0, // Offset when HR axis is shown
           axisLine: {
             lineStyle: {
               color: COLORS.cusumOk,
@@ -549,6 +626,29 @@ export function MainChart() {
           },
           axisLabel: {
             color: COLORS.cusumOk,
+          },
+          splitLine: {
+            show: false,
+          },
+        },
+        // HR Y-axis (third axis, positioned right)
+        {
+          type: "value",
+          name: "HR (bpm)",
+          nameTextStyle: {
+            color: COLORS.hr,
+          },
+          position: "right",
+          min: hrAxisMin,
+          max: hrAxisMax,
+          show: hasHR,
+          axisLine: {
+            lineStyle: {
+              color: COLORS.hr,
+            },
+          },
+          axisLabel: {
+            color: COLORS.hr,
           },
           splitLine: {
             show: false,

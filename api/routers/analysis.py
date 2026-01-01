@@ -117,11 +117,17 @@ def run_analysis(request: AnalysisRequest):
         breath_times = breath_df['breath_time'].values
         ve_median, bin_times, ve_binned = apply_hybrid_filtering(ve_raw, breath_times, params)
 
+        # Get HR data if available
+        hr_values = None
+        if 'hr' in breath_df.columns:
+            hr_values = breath_df['hr'].tolist()
+
         breath_data = BreathData(
             times=breath_times.tolist(),
             ve_median=ve_median.tolist(),
             bin_times=bin_times.tolist(),
-            ve_binned=ve_binned.tolist()
+            ve_binned=ve_binned.tolist(),
+            hr=hr_values
         )
 
         # Convert Interval objects to dicts for response
