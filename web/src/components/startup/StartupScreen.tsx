@@ -51,6 +51,9 @@ export function StartupScreen() {
       // Switch to cloud data source
       setDataSource("cloud");
     },
+    onError: (error) => {
+      console.error("Failed to load session:", error);
+    },
   });
 
   const handleSelectSession = useCallback(
@@ -60,10 +63,11 @@ export function StartupScreen() {
     [loadSessionMutation]
   );
 
-  const sessions = sessionsQuery.data || [];
+  // Safely get sessions array with validation
+  const sessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
 
   return (
-    <div className="h-full flex flex-col p-6 gap-6">
+    <div className="h-full flex flex-col p-6 gap-6 overflow-auto">
       {/* Header */}
       <div className="text-center">
         <h2 className="text-lg font-semibold text-foreground mb-1">
@@ -74,6 +78,13 @@ export function StartupScreen() {
         </p>
       </div>
 
+      {/* Loading State */}
+      {sessionsQuery.isLoading && (
+        <div className="text-center py-8 text-muted-foreground">
+          <p className="text-sm">Loading sessions...</p>
+        </div>
+      )}
+
       {/* Error State */}
       {sessionsQuery.isError && (
         <div className="text-center py-8 text-muted-foreground">
@@ -83,7 +94,7 @@ export function StartupScreen() {
       )}
 
       {/* Content */}
-      {!sessionsQuery.isError && (
+      {!sessionsQuery.isLoading && !sessionsQuery.isError && (
         <>
           {/* Intensity Chart */}
           <IntensityChart sessions={sessions} />
@@ -92,8 +103,15 @@ export function StartupScreen() {
           <RunListTable
             sessions={sessions}
             onSelectSession={handleSelectSession}
-            isLoading={sessionsQuery.isLoading || loadSessionMutation.isPending}
+            isLoading={loadSessionMutation.isPending}
           />
+
+          {/* Error loading session */}
+          {loadSessionMutation.isError && (
+            <div className="text-center py-2 text-destructive text-sm">
+              Failed to load session. Please try again.
+            </div>
+          )}
         </>
       )}
     </div>
