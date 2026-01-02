@@ -11,6 +11,13 @@ import type {
   AnalysisRequest,
   AnalysisResponse,
   APIError,
+  CalibrationParamsResponse,
+  CalibrationState,
+  CalibrationUpdateRequest,
+  CalibrationUpdateResponse,
+  VEApprovalRequest,
+  RunType,
+  IntervalResult,
 } from "./api-types";
 
 const API_BASE = "/api";
@@ -171,4 +178,114 @@ export async function listSessions(): Promise<SessionInfo[]> {
  */
 export async function getSession(sessionId: string): Promise<SessionContent> {
   return fetchApi<undefined, SessionContent>(`/sessions/${encodeURIComponent(sessionId)}`, "GET");
+}
+
+// =============================================================================
+// Calibration API
+// =============================================================================
+
+/**
+ * Get or generate a unique user ID for calibration
+ * Uses localStorage to persist across sessions
+ */
+export function getOrCreateUserId(): string {
+  const key = "vt_calibration_user_id";
+  let userId = localStorage.getItem(key);
+  if (!userId) {
+    // Generate a UUID v4-like identifier
+    userId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+    localStorage.setItem(key, userId);
+  }
+  return userId;
+}
+
+/**
+ * Get calibrated parameters for iOS app sync
+ */
+export async function getCalibrationParams(
+  userId?: string
+): Promise<CalibrationParamsResponse> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, CalibrationParamsResponse>(
+    `/calibration/params?user_id=${encodeURIComponent(uid)}`,
+    "GET"
+  );
+}
+
+/**
+ * Get full calibration state for a user
+ */
+export async function getCalibrationState(
+  userId?: string
+): Promise<CalibrationState> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, CalibrationState>(
+    `/calibration/state?user_id=${encodeURIComponent(uid)}`,
+    "GET"
+  );
+}
+
+/**
+ * Update calibration from analysis results
+ */
+export async function updateCalibration(
+  runType: RunType,
+  intervalResults: IntervalResult[],
+  userId?: string
+): Promise<CalibrationUpdateResponse> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<CalibrationUpdateRequest, CalibrationUpdateResponse>(
+    "/calibration/update",
+    "POST",
+    {
+      user_id: uid,
+      run_type: runType,
+      interval_results: intervalResults.map((r) => ({
+        start_time: r.start_time,
+        end_time: r.end_time,
+        status: r.status,
+        ve_drift_pct: r.ve_drift_pct,
+        avg_ve: r.avg_ve,
+        split_slope_ratio: r.split_slope_ratio,
+        sigma_pct: 5.0, // Default, would come from analysis params
+      })),
+    }
+  );
+}
+
+/**
+ * Approve or reject a VE threshold change
+ */
+export async function approveVEThreshold(
+  threshold: "vt1" | "vt2",
+  approved: boolean,
+  userId?: string
+): Promise<{ success: boolean; approved: boolean; new_value: number }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<VEApprovalRequest, { success: boolean; approved: boolean; new_value: number }>(
+    "/calibration/approve-ve",
+    "POST",
+    {
+      user_id: uid,
+      threshold,
+      approved,
+    }
+  );
+}
+
+/**
+ * Reset calibration to defaults
+ */
+export async function resetCalibration(
+  userId?: string
+): Promise<{ success: boolean; message: string }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, { success: boolean; message: string }>(
+    `/calibration/reset?user_id=${encodeURIComponent(uid)}`,
+    "POST"
+  );
 }

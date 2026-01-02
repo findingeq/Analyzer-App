@@ -30,6 +30,7 @@ import {
   readFileAsText,
   listSessions,
   getSession,
+  updateCalibration,
   type SessionInfo,
 } from "@/lib/client";
 import { formatTime } from "@/lib/utils";
@@ -79,6 +80,7 @@ export function Sidebar() {
     setVt2Ceiling,
     setUseThresholdsForAll,
     setAdvancedParams,
+    setPendingVEPrompt,
     reset,
   } = useRunStore();
 
@@ -157,9 +159,22 @@ export function Sidebar() {
       });
       return result;
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       setAnalysisResult(result);
       setIsAnalyzing(false);
+
+      // Update calibration with results (async, don't block UI)
+      if (runType && result.results?.length > 0) {
+        try {
+          const calibrationResult = await updateCalibration(runType, result.results);
+          if (calibrationResult.ve_prompt) {
+            setPendingVEPrompt(calibrationResult.ve_prompt);
+          }
+        } catch (error) {
+          // Calibration update failed, but don't break the analysis flow
+          console.warn("Calibration update failed:", error);
+        }
+      }
     },
     onError: () => {
       setIsAnalyzing(false);

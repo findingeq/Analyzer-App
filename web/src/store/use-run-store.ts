@@ -10,6 +10,7 @@ import type {
   AnalysisResponse,
   ParseCSVResponse,
   IntervalResult,
+  CalibrationUpdateResponse,
 } from "@/lib/api-types";
 
 // =============================================================================
@@ -52,6 +53,9 @@ interface RunState {
   vt1Ceiling: number;
   vt2Ceiling: number;
   useThresholdsForAll: boolean;
+
+  // Calibration state
+  pendingVEPrompt: CalibrationUpdateResponse["ve_prompt"] | null;
 
   // Advanced CUSUM parameters (persisted)
   advancedParams: {
@@ -108,6 +112,10 @@ interface RunActions {
   // Advanced params actions
   setAdvancedParams: (params: Partial<RunState["advancedParams"]>) => void;
 
+  // Calibration actions
+  setPendingVEPrompt: (prompt: CalibrationUpdateResponse["ve_prompt"] | null) => void;
+  clearVEPrompt: () => void;
+
   // Reset
   reset: () => void;
 }
@@ -150,6 +158,7 @@ const initialState: RunState = {
   vt2Ceiling: 120.0,
   useThresholdsForAll: false,
   advancedParams: defaultAdvancedParams,
+  pendingVEPrompt: null,
 };
 
 // =============================================================================
@@ -227,6 +236,10 @@ export const useRunStore = create<RunState & RunActions>()(
         set((state) => ({
           advancedParams: { ...state.advancedParams, ...params },
         })),
+
+      // Calibration actions
+      setPendingVEPrompt: (pendingVEPrompt) => set({ pendingVEPrompt }),
+      clearVEPrompt: () => set({ pendingVEPrompt: null }),
 
       // Reset
       reset: () => set(initialState),

@@ -419,11 +419,11 @@ Response:
 
 1. ✅ **Rename enums**: `VT1_STEADY` → `MODERATE`, `VT2_INTERVAL` → `HEAVY` (complete)
 2. ✅ **Allow intervals for all domains** (complete)
-3. **Backend calibration service** (new) - NIG math with forgetting factor
-4. **Storage/database schema** (new)
-5. **API endpoints** (new)
-6. **Frontend UI**: exclusion checkboxes, approval popup (new)
-7. **Mobile sync** (TBD based on repo investigation)
+3. ✅ **Backend calibration service** - NIG math with forgetting factor (`api/services/calibration.py`)
+4. ✅ **Storage/database schema** - Firebase Storage per-user JSON (`api/models/schemas.py`)
+5. ✅ **API endpoints** - CRUD + iOS sync (`api/routers/calibration.py`)
+6. ✅ **Frontend UI**: VE approval popup (complete), exclusion checkboxes (pending)
+7. **Mobile sync** - Code examples provided, iOS app changes required
 
 ---
 
@@ -434,3 +434,5 @@ Response:
 | 2026-01-02 | Initial specification |
 | 2026-01-02 | Added iOS app sync recommendations with code examples |
 | 2026-01-02 | Expanded sync to include sigma_pct per domain (not just VE thresholds) |
+| 2026-01-02 | Implemented backend calibration service with NIG algorithm |
+| 2026-01-02 | Implemented frontend VE approval dialog and calibration integration |
