@@ -367,6 +367,9 @@ class CalibrationParamsResponse(BaseModel):
     max_drift_moderate: float = Field(description="Max drift % threshold for Moderate domain")
     max_drift_heavy: float = Field(description="Max drift % threshold for Heavy domain")
     max_drift_severe: float = Field(description="Max drift % threshold for Severe domain")
+    split_ratio_moderate: float = Field(description="Split slope ratio for Moderate domain")
+    split_ratio_heavy: float = Field(description="Split slope ratio for Heavy domain")
+    split_ratio_severe: float = Field(description="Split slope ratio for Severe domain")
     enabled: bool = Field(default=True, description="Whether calibration is active")
     last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
 
