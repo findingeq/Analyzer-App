@@ -265,6 +265,7 @@ export async function updateCalibration(
 export async function approveVEThreshold(
   threshold: "vt1" | "vt2",
   approved: boolean,
+  proposedValue: number,
   userId?: string
 ): Promise<{ success: boolean; approved: boolean; new_value: number }> {
   const uid = userId || getOrCreateUserId();
@@ -275,6 +276,7 @@ export async function approveVEThreshold(
       user_id: uid,
       threshold,
       approved,
+      proposed_value: proposedValue,
     }
   );
 }

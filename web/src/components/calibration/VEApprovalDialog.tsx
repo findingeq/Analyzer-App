@@ -19,7 +19,7 @@ interface VEPrompt {
   threshold: "vt1" | "vt2";
   current_value: number;
   proposed_value: number;
-  pending_delta: number;
+  divergence: number;
 }
 
 interface VEApprovalDialogProps {
@@ -38,13 +38,17 @@ export function VEApprovalDialog({
   if (!prompt) return null;
 
   const thresholdName = prompt.threshold === "vt1" ? "VT1" : "VT2";
-  const direction = prompt.pending_delta > 0 ? "increase" : "decrease";
-  const absChange = Math.abs(prompt.pending_delta).toFixed(1);
+  const direction = prompt.divergence > 0 ? "increase" : "decrease";
+  const absChange = Math.abs(prompt.divergence).toFixed(1);
 
   const handleApprove = async () => {
     setIsSubmitting(true);
     try {
-      const result = await approveVEThreshold(prompt.threshold, true);
+      const result = await approveVEThreshold(
+        prompt.threshold,
+        true,
+        prompt.proposed_value
+      );
       onApproved?.(prompt.threshold, result.new_value);
       onClose();
     } catch (error) {
@@ -57,7 +61,7 @@ export function VEApprovalDialog({
   const handleReject = async () => {
     setIsSubmitting(true);
     try {
-      await approveVEThreshold(prompt.threshold, false);
+      await approveVEThreshold(prompt.threshold, false, prompt.proposed_value);
       onClose();
     } catch (error) {
       console.error("Failed to reject VE threshold:", error);

@@ -269,8 +269,7 @@ export interface DomainPosterior {
 export interface VEThresholdState {
   current_value: number;
   posterior: NIGPosterior;
-  pending_delta: number;
-  last_prompted_value: number;
+  anchor_kappa: number;
 }
 
 export interface CalibrationState {
@@ -313,7 +312,7 @@ export interface CalibrationUpdateResponse {
     threshold: "vt1" | "vt2";
     current_value: number;
     proposed_value: number;
-    pending_delta: number;
+    divergence: number;
   } | null;
 }
 
@@ -321,4 +320,5 @@ export interface VEApprovalRequest {
   user_id: string;
   threshold: "vt1" | "vt2";
   approved: boolean;
+  proposed_value: number;
 }
