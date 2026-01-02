@@ -1,6 +1,6 @@
 # ML Calibration System - Implementation Specification
 
-> **Status**: Design Complete - Pending Implementation
+> **Status**: Implemented
 > **Last Updated**: 2026-01-02
 
 ---
@@ -28,6 +28,26 @@ Then perform standard Bayesian update with new observation.
 - Damping is achieved through the Bayesian framework itself
 - Preserves valid confidence intervals
 - No separate EMA formula needed (would cause "double damping")
+
+### VE Threshold Calibration: Anchor & Pull Method
+
+For VE thresholds (VT1/VT2), we use an **Anchor & Pull** approach with **κ=4**:
+
+- **Anchor**: The user-approved threshold acts as a strong prior worth 4 virtual observations
+- **Pull**: Observed avg_ve values during unexpected outcomes pull the posterior mean toward physiological reality
+- **Prompt**: User is prompted when posterior mean diverges ≥1 L/min from anchor
+
+**Why Anchor & Pull vs Delta Accumulation:**
+
+| Approach | VT1=60, observe 75 L/min | VT1=60, 3× observe 75 L/min |
+|----------|--------------------------|------------------------------|
+| Delta Accumulation | +0.5-1.0 nudge → 61 | ~62.5 (15+ runs to reach 75) |
+| Anchor & Pull (κ=4) | Posterior ≈ 63 | Posterior ≈ 66-67 |
+
+Benefits:
+1. **Physiological Directness**: avg_ve IS the measurement, not just a directional signal
+2. **Convergence Speed**: Bad ramp test corrects in 2-3 runs, not 15-20
+3. **Mathematical Robustness**: κ scales step size based on certainty, no magic numbers
 
 ---
 
@@ -119,19 +139,22 @@ Domain models are kept pure. If a Severe run unexpectedly shows low drift, this 
 | Severe | BELOW_THRESHOLD | > VT2 VE | YES | Increase VT2 ceiling |
 | Severe | BELOW_THRESHOLD | ≤ VT2 VE | NO | No update |
 
-### Update Magnitude Scaling:
-- Greater deviation from threshold → greater incremental change
-- Formula: `update_magnitude ∝ |avg_ve - threshold|`
+### Anchor & Pull Mechanics:
 
-### Internal vs User-Facing Updates:
-- **Internal**: Updates occur for any fractional change (accumulated in background)
-- **User prompt**: Only shown when cumulative change reaches ≥ ±1 L/min
+When an unexpected outcome occurs:
+1. **Update posterior**: Observed avg_ve is fed into NIG posterior using anchored update
+2. **Calculate posterior mean**: Blend anchor (κ=4) with observation-derived posterior
+3. **Check divergence**: If `|posterior_mean - current_value| ≥ 1 L/min`, prompt user
 
-### User Rejection Handling:
-1. If user rejects proposed update → calibration continues accumulating in background
-2. Background tracks cumulative delta from last user prompt
-3. When cumulative delta reaches another ≥ ±1 L/min → prompt user again
-4. This prevents nagging while still tracking the physiological trend
+```
+anchored_mean = (anchor_κ × current_value + obs_κ × obs_mean) / (anchor_κ + obs_κ)
+```
+
+### User Approval/Rejection:
+- **Approve**: New value becomes the anchor; posterior resets to fresh state
+- **Reject**: Current value remains anchor; posterior resets (starts fresh tracking)
+
+Both actions reset the posterior, meaning future observations start fresh relative to the (new or existing) anchor. This prevents stale observations from accumulating indefinitely.
 
 ---
 
@@ -180,10 +203,9 @@ class DomainPosterior:
     split_ratio: NIGPosterior
 
 class VEThresholdState:
-    current_value: float
-    posterior: NIGPosterior
-    pending_delta: float  # Accumulated change since last user prompt
-    last_prompted_value: float
+    current_value: float     # User-approved threshold (anchor)
+    posterior: NIGPosterior  # Observation-derived posterior
+    anchor_kappa: float = 4.0  # Virtual sample size for anchoring
 
 class NIGPosterior:
     mu: float      # mean
@@ -199,11 +221,13 @@ class NIGPosterior:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/calibration/state` | GET | Get user's calibration state |
+| `/api/calibration/params` | GET | Get calibrated params for iOS sync |
+| `/api/calibration/state` | GET | Get full user's calibration state |
 | `/api/calibration/update` | POST | Update calibration from run result |
 | `/api/calibration/reset` | POST | Reset to defaults |
-| `/api/calibration/exclude-run` | POST | Toggle run exclusion |
 | `/api/calibration/approve-ve` | POST | User approves/rejects VE threshold change |
+| `/api/calibration/set-ve-threshold` | POST | Manual threshold override (resets anchor) |
+| `/api/calibration/blended-params` | GET | Get blended params for a run type |
 
 ---
 
@@ -436,3 +460,4 @@ Response:
 | 2026-01-02 | Expanded sync to include sigma_pct per domain (not just VE thresholds) |
 | 2026-01-02 | Implemented backend calibration service with NIG algorithm |
 | 2026-01-02 | Implemented frontend VE approval dialog and calibration integration |
+| 2026-01-02 | Replaced delta accumulation with Anchor & Pull Bayesian approach (κ=4) |
