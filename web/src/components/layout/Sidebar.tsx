@@ -118,6 +118,8 @@ export function Sidebar() {
         expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
         maxDriftVt1: calibrationQuery.data.max_drift_moderate,
         maxDriftVt2: calibrationQuery.data.max_drift_heavy,
+        splitRatioVt1: calibrationQuery.data.split_ratio_moderate,
+        splitRatioVt2: calibrationQuery.data.split_ratio_heavy,
       });
       setCalibrationLoaded(true);
     }
@@ -154,6 +156,8 @@ export function Sidebar() {
         expectedDriftVt2: params.expected_drift_heavy,
         maxDriftVt1: params.max_drift_moderate,
         maxDriftVt2: params.max_drift_heavy,
+        splitRatioVt1: params.split_ratio_moderate,
+        splitRatioVt2: params.split_ratio_heavy,
       });
     } catch (error) {
       console.error("Failed to restore from calibration:", error);
@@ -882,6 +886,38 @@ export function Sidebar() {
                     onChange={(e) =>
                       setAdvancedParams({
                         maxDriftVt2: parseFloat(e.target.value) || 3.0,
+                      })
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </div>
+
+              {/* Split Ratio */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Split Ratio (VT1)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={advancedParams.splitRatioVt1}
+                    onChange={(e) =>
+                      setAdvancedParams({
+                        splitRatioVt1: parseFloat(e.target.value) || 1.0,
+                      })
+                    }
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Split Ratio (VT2)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={advancedParams.splitRatioVt2}
+                    onChange={(e) =>
+                      setAdvancedParams({
+                        splitRatioVt2: parseFloat(e.target.value) || 1.2,
                       })
                     }
                     className="h-8"

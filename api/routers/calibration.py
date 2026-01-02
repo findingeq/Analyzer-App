@@ -118,6 +118,9 @@ def get_calibration_params(user_id: str = Query(..., description="User/device id
         max_drift_moderate=moderate_params['max_drift_pct'],
         max_drift_heavy=heavy_params['max_drift_pct'],
         max_drift_severe=severe_params['max_drift_pct'],
+        split_ratio_moderate=moderate_params['split_ratio'],
+        split_ratio_heavy=heavy_params['split_ratio'],
+        split_ratio_severe=severe_params['split_ratio'],
         enabled=state.enabled,
         last_updated=state.last_updated.isoformat() if state.last_updated else None
     )
