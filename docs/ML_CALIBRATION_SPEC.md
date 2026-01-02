@@ -226,10 +226,124 @@ When running analysis:
 
 **iPhone repo**: https://github.com/findingeq/vt-threshold-app
 
-To investigate:
-- Existing sync infrastructure between web and mobile
-- API endpoints for pushing updated thresholds
-- Storage mechanism on mobile side
+### Current iOS App Architecture
+
+The iOS app (Flutter/Dart) stores VT thresholds locally:
+- **Storage**: SharedPreferences with keys `vt1_ve` and `vt2_ve`
+- **Defaults**: VT1 = 60.0 L/min, VT2 = 80.0 L/min
+- **State Management**: `AppState` class extends `ChangeNotifier` (Provider pattern)
+- **Update Methods**: `setVt1Ve()` and `setVt2Ve()` persist and notify listeners
+
+### Current Cloud Integration
+
+The app has **upload-only** capability:
+- `uploadToCloud()` POSTs workout data to Railway endpoint
+- **No authentication** (no API keys or tokens)
+- **No download/sync** for thresholds
+
+### Required iOS App Changes
+
+To enable automatic threshold sync, add the following to the iOS app:
+
+#### 1. New API Service Method (in `workout_data_service.dart`)
+
+```dart
+/// Fetches calibrated VT thresholds from the cloud
+/// Returns null if no calibration data exists or on error
+Future<Map<String, double>?> fetchCalibratedThresholds(String userId) async {
+  try {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/api/calibration/thresholds?user_id=$userId'),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {
+        'vt1_ve': data['vt1_ve']?.toDouble(),
+        'vt2_ve': data['vt2_ve']?.toDouble(),
+      };
+    }
+    return null;
+  } catch (e) {
+    print('Error fetching calibrated thresholds: $e');
+    return null;
+  }
+}
+```
+
+#### 2. Sync Method (in `app_state.dart`)
+
+```dart
+/// Syncs thresholds from cloud calibration
+/// Shows confirmation dialog if change >= 1 L/min
+Future<void> syncThresholdsFromCloud(BuildContext context) async {
+  final workoutService = WorkoutDataService();
+  final calibrated = await workoutService.fetchCalibratedThresholds(_userId);
+
+  if (calibrated == null) return;
+
+  final vt1Change = (calibrated['vt1_ve']! - _vt1Ve).abs();
+  final vt2Change = (calibrated['vt2_ve']! - _vt2Ve).abs();
+
+  if (vt1Change >= 1.0 || vt2Change >= 1.0) {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Update Thresholds?'),
+        content: Text(
+          'Calibration suggests:\n'
+          'VT1: ${calibrated['vt1_ve']!.toStringAsFixed(1)} L/min\n'
+          'VT2: ${calibrated['vt2_ve']!.toStringAsFixed(1)} L/min\n\n'
+          'Apply these changes?'
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('No')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Yes')),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+  }
+
+  // Apply changes
+  if (calibrated['vt1_ve'] != null) await setVt1Ve(calibrated['vt1_ve']!);
+  if (calibrated['vt2_ve'] != null) await setVt2Ve(calibrated['vt2_ve']!);
+}
+```
+
+#### 3. Trigger Sync on App Launch (in `main.dart`)
+
+```dart
+// After app initialization, attempt to sync thresholds
+WidgetsBinding.instance.addPostFrameCallback((_) {
+  final appState = Provider.of<AppState>(context, listen: false);
+  appState.syncThresholdsFromCloud(context);
+});
+```
+
+#### 4. User ID Considerations
+
+Currently the app has no user authentication. Options:
+- **Device ID**: Use a unique device identifier (simple but not cross-device)
+- **Anonymous ID**: Generate and persist a UUID on first launch
+- **Future**: Add proper user authentication for cross-device sync
+
+### Backend Endpoint Required
+
+Add to web app API:
+
+```
+GET /api/calibration/thresholds?user_id={user_id}
+
+Response:
+{
+  "vt1_ve": 62.5,
+  "vt2_ve": 85.0,
+  "last_updated": "2026-01-02T12:00:00Z"
+}
+```
 
 ---
 
@@ -250,3 +364,4 @@ To investigate:
 | Date | Changes |
 |------|---------|
 | 2026-01-02 | Initial specification |
+| 2026-01-02 | Added iOS app sync recommendations with code examples |
