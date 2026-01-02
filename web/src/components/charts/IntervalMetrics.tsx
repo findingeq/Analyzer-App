@@ -149,11 +149,22 @@ export function IntervalMetrics() {
         const hasUnrecoveredAlarm = result.alarm_time !== null && result.alarm_time !== undefined && !result.cusum_recovered;
         const avgVeColor = hasUnrecoveredAlarm ? "text-red-400" : "text-emerald-400";
 
-        // Split slope ratio: Green if < 1.2x; Red if >= 1.2x
-        const splitRatio = result.split_slope_ratio;
-        const splitRatioColor = splitRatio !== null && splitRatio !== undefined && splitRatio >= splitSlopeThreshold
+        // Overall slope: color based on drift magnitude
+        const overallSlope = result.ve_drift_pct;
+        const slopeColor = overallSlope !== null && overallSlope !== undefined && overallSlope >= 1.0
           ? "text-red-400"
-          : "text-emerald-400";
+          : overallSlope !== null && overallSlope !== undefined && overallSlope >= 0.5
+            ? "text-amber-400"
+            : "text-emerald-400";
+
+        // Split slope ratio: Green if < 1.2x OR if slope2 < 1%/min; Red if both conditions met
+        const splitRatio = result.split_slope_ratio;
+        const slope2 = result.slope2_pct;
+        const splitRatioTriggered = splitRatio !== null && splitRatio !== undefined
+          && slope2 !== null && slope2 !== undefined
+          && splitRatio >= splitSlopeThreshold
+          && slope2 >= 1.0;  // Require minimum 1%/min in 3rd segment
+        const splitRatioColor = splitRatioTriggered ? "text-red-400" : "text-emerald-400";
 
         return (
           <button
@@ -169,7 +180,7 @@ export function IntervalMetrics() {
             style={{
               left: `${position.centerPct}%`,
               maxWidth: `${Math.max(position.widthPct * 0.9, 10)}%`,
-              minWidth: "70px",
+              minWidth: "80px",
             }}
           >
             <div className="text-xs font-medium text-zinc-300">
@@ -178,6 +189,11 @@ export function IntervalMetrics() {
             <div className={`text-sm font-semibold ${avgVeColor}`}>
               {result.avg_ve.toFixed(1)} L/min
             </div>
+            {overallSlope !== null && overallSlope !== undefined && !result.is_ceiling_based && (
+              <div className={`text-xs ${slopeColor}`}>
+                {overallSlope >= 0 ? "+" : ""}{overallSlope.toFixed(2)}%/min
+              </div>
+            )}
             {splitRatio !== null && splitRatio !== undefined && (
               <div className={`text-xs ${splitRatioColor}`}>
                 {splitRatio.toFixed(2)}x
