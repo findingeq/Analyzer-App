@@ -30,7 +30,7 @@ function App() {
         headerMetrics={<HeaderMetrics />}
       />
       <VEApprovalDialog
-        prompt={pendingVEPrompt}
+        prompt={pendingVEPrompt ?? null}
         onClose={clearVEPrompt}
         onApproved={handleVEApproved}
       />

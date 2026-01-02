@@ -18,6 +18,7 @@ import type {
   VEApprovalRequest,
   RunType,
   IntervalResult,
+  IntervalStatus,
 } from "./api-types";
 
 const API_BASE = "/api";
@@ -238,21 +239,22 @@ export async function updateCalibration(
   userId?: string
 ): Promise<CalibrationUpdateResponse> {
   const uid = userId || getOrCreateUserId();
+  const mappedResults: CalibrationUpdateRequest["interval_results"] = intervalResults.map((r) => ({
+    start_time: r.start_time,
+    end_time: r.end_time,
+    status: r.status as IntervalStatus,
+    ve_drift_pct: r.ve_drift_pct,
+    avg_ve: r.avg_ve,
+    split_slope_ratio: r.split_slope_ratio,
+    sigma_pct: 5.0, // Default, would come from analysis params
+  }));
   return fetchApi<CalibrationUpdateRequest, CalibrationUpdateResponse>(
     "/calibration/update",
     "POST",
     {
       user_id: uid,
       run_type: runType,
-      interval_results: intervalResults.map((r) => ({
-        start_time: r.start_time,
-        end_time: r.end_time,
-        status: r.status,
-        ve_drift_pct: r.ve_drift_pct,
-        avg_ve: r.avg_ve,
-        split_slope_ratio: r.split_slope_ratio,
-        sigma_pct: 5.0, // Default, would come from analysis params
-      })),
+      interval_results: mappedResults,
     }
   );
 }
