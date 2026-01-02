@@ -104,16 +104,20 @@ export function Sidebar() {
     retry: false,
   });
 
-  // Populate VT thresholds and sigma from calibration when loaded (only once on mount)
+  // Populate VT thresholds and advanced params from calibration when loaded (only once on mount)
   useEffect(() => {
     if (calibrationQuery.data && !calibrationLoaded) {
       // VT thresholds
       setVt1Ceiling(calibrationQuery.data.vt1_ve);
       setVt2Ceiling(calibrationQuery.data.vt2_ve);
-      // Sigma values: VT1=Moderate, VT2=Heavy (or Severe - they should be similar)
+      // Advanced params: VT1=Moderate domain, VT2=Heavy domain
       setAdvancedParams({
         sigmaPctVt1: calibrationQuery.data.sigma_pct_moderate,
         sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
+        expectedDriftVt1: calibrationQuery.data.expected_drift_moderate,
+        expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
+        maxDriftVt1: calibrationQuery.data.max_drift_moderate,
+        maxDriftVt2: calibrationQuery.data.max_drift_heavy,
       });
       setCalibrationLoaded(true);
     }
@@ -142,10 +146,14 @@ export function Sidebar() {
       // VT thresholds
       setVt1Ceiling(params.vt1_ve);
       setVt2Ceiling(params.vt2_ve);
-      // Sigma values: VT1=Moderate, VT2=Heavy
+      // Advanced params: VT1=Moderate domain, VT2=Heavy domain
       setAdvancedParams({
         sigmaPctVt1: params.sigma_pct_moderate,
         sigmaPctVt2: params.sigma_pct_heavy,
+        expectedDriftVt1: params.expected_drift_moderate,
+        expectedDriftVt2: params.expected_drift_heavy,
+        maxDriftVt1: params.max_drift_moderate,
+        maxDriftVt2: params.max_drift_heavy,
       });
     } catch (error) {
       console.error("Failed to restore from calibration:", error);

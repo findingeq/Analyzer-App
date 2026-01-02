@@ -112,6 +112,12 @@ def get_calibration_params(user_id: str = Query(..., description="User/device id
         sigma_pct_moderate=moderate_params['sigma_pct'],
         sigma_pct_heavy=heavy_params['sigma_pct'],
         sigma_pct_severe=severe_params['sigma_pct'],
+        expected_drift_moderate=moderate_params['expected_drift_pct'],
+        expected_drift_heavy=heavy_params['expected_drift_pct'],
+        expected_drift_severe=severe_params['expected_drift_pct'],
+        max_drift_moderate=moderate_params['max_drift_pct'],
+        max_drift_heavy=heavy_params['max_drift_pct'],
+        max_drift_severe=severe_params['max_drift_pct'],
         enabled=state.enabled,
         last_updated=state.last_updated.isoformat() if state.last_updated else None
     )
