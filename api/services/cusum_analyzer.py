@@ -119,7 +119,7 @@ def analyze_interval_segmented(
     interval_duration_min = interval_duration_sec / 60.0
 
     # Phase III onset detection
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         # VT1: Fixed blanking at 6 minutes
         phase3_onset_rel = params.vt1_blanking_time
         phase3_onset_time = phase3_onset_rel + breath_times_raw[0]
@@ -156,7 +156,7 @@ def analyze_interval_segmented(
     segment1_ve = np.array([start_ve, model_ve_at_end + offset])
 
     # Set calibration window
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         cal_start = phase3_onset_rel
         if interval_duration_min >= 15.0:
             cal_duration = params.vt1_calibration_long
@@ -169,12 +169,12 @@ def analyze_interval_segmented(
 
     # Determine domain-specific parameters
     # SEVERE uses same parameters as VT2
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         h_mult = params.h_multiplier_vt1
         expected_drift_pct = params.expected_drift_pct_vt1
         sigma_pct = params.sigma_pct_vt1
         max_drift_threshold = params.max_drift_pct_vt1
-    else:  # VT2_INTERVAL or SEVERE
+    else:  # HEAVY or SEVERE
         h_mult = params.h_multiplier_vt2
         expected_drift_pct = params.expected_drift_pct_vt2
         sigma_pct = params.sigma_pct_vt2
@@ -479,11 +479,11 @@ def analyze_interval_ceiling(
 
     # Get ceiling
     # SEVERE uses same parameters as VT2
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         ceiling_ve = params.vt1_ve_ceiling
         h_mult = params.h_multiplier_vt1
         sigma_pct = params.sigma_pct_vt1
-    else:  # VT2_INTERVAL or SEVERE
+    else:  # HEAVY or SEVERE
         ceiling_ve = params.vt2_ve_ceiling
         h_mult = params.h_multiplier_vt2
         sigma_pct = params.sigma_pct_vt2

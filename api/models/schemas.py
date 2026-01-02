@@ -306,3 +306,77 @@ class AnalysisResponse(BaseModel):
         default=None,
         description="Error message if analysis failed"
     )
+
+
+# =============================================================================
+# Calibration Schemas
+# =============================================================================
+
+class NIGPosteriorSchema(BaseModel):
+    """Normal-Inverse-Gamma posterior for a single parameter."""
+    mu: float = Field(default=0.0, description="Posterior mean estimate")
+    kappa: float = Field(default=1.0, description="Precision of mean")
+    alpha: float = Field(default=2.0, description="Shape parameter")
+    beta: float = Field(default=1.0, description="Scale parameter")
+    n_obs: int = Field(default=0, description="Observation count")
+
+
+class DomainPosteriorSchema(BaseModel):
+    """All NIG posteriors for a single intensity domain."""
+    expected_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+    max_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+    sigma: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+    split_ratio: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+
+
+class VEThresholdStateSchema(BaseModel):
+    """State for a VE threshold (VT1 or VT2)."""
+    current_value: float = Field(default=60.0, description="Current threshold")
+    posterior: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+    pending_delta: float = Field(default=0.0, description="Pending change")
+    last_prompted_value: float = Field(default=60.0, description="Last prompted value")
+
+
+class CalibrationStateSchema(BaseModel):
+    """Complete calibration state for a user."""
+    moderate: DomainPosteriorSchema = Field(default_factory=DomainPosteriorSchema)
+    heavy: DomainPosteriorSchema = Field(default_factory=DomainPosteriorSchema)
+    severe: DomainPosteriorSchema = Field(default_factory=DomainPosteriorSchema)
+    vt1_ve: VEThresholdStateSchema = Field(default_factory=VEThresholdStateSchema)
+    vt2_ve: VEThresholdStateSchema = Field(default_factory=VEThresholdStateSchema)
+    last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
+    run_counts: dict = Field(default_factory=lambda: {'moderate': 0, 'heavy': 0, 'severe': 0})
+
+
+class CalibrationParamsResponse(BaseModel):
+    """Calibrated parameters for iOS app sync."""
+    vt1_ve: float = Field(description="VT1 VE threshold (L/min)")
+    vt2_ve: float = Field(description="VT2 VE threshold (L/min)")
+    sigma_pct_moderate: float = Field(description="Sigma % for Moderate domain")
+    sigma_pct_heavy: float = Field(description="Sigma % for Heavy domain")
+    sigma_pct_severe: float = Field(description="Sigma % for Severe domain")
+    last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
+
+
+class CalibrationUpdateRequest(BaseModel):
+    """Request to update calibration from analysis results."""
+    user_id: str = Field(description="User/device identifier")
+    run_type: RunType = Field(description="Intensity domain")
+    interval_results: List[dict] = Field(description="List of interval result dicts")
+
+
+class CalibrationUpdateResponse(BaseModel):
+    """Response from calibration update."""
+    success: bool
+    run_count: int = Field(description="New qualifying run count for domain")
+    ve_prompt: Optional[dict] = Field(
+        default=None,
+        description="VE threshold prompt if change >= 1 L/min"
+    )
+
+
+class VEApprovalRequest(BaseModel):
+    """Request to approve/reject VE threshold change."""
+    user_id: str = Field(description="User/device identifier")
+    threshold: str = Field(description="'vt1' or 'vt2'")
+    approved: bool = Field(description="User's approval decision")

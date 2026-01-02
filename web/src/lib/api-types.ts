@@ -8,8 +8,8 @@
 // =============================================================================
 
 export const RunType = {
-  VT1_STEADY: "VT1",
-  VT2_INTERVAL: "VT2",
+  MODERATE: "MODERATE",
+  HEAVY: "HEAVY",
   SEVERE: "SEVERE",
 } as const;
 
@@ -245,4 +245,72 @@ export interface AnalysisResponse {
 
 export interface APIError {
   detail: string;
+}
+
+// =============================================================================
+// Calibration Types
+// =============================================================================
+
+export interface NIGPosterior {
+  mu: number;
+  kappa: number;
+  alpha: number;
+  beta: number;
+  n_obs: number;
+}
+
+export interface DomainPosterior {
+  expected_drift: NIGPosterior;
+  max_drift: NIGPosterior;
+  sigma: NIGPosterior;
+  split_ratio: NIGPosterior;
+}
+
+export interface VEThresholdState {
+  current_value: number;
+  posterior: NIGPosterior;
+  pending_delta: number;
+  last_prompted_value: number;
+}
+
+export interface CalibrationState {
+  moderate: DomainPosterior;
+  heavy: DomainPosterior;
+  severe: DomainPosterior;
+  vt1_ve: VEThresholdState;
+  vt2_ve: VEThresholdState;
+  last_updated?: string | null;
+  run_counts: Record<string, number>;
+}
+
+export interface CalibrationParamsResponse {
+  vt1_ve: number;
+  vt2_ve: number;
+  sigma_pct_moderate: number;
+  sigma_pct_heavy: number;
+  sigma_pct_severe: number;
+  last_updated?: string | null;
+}
+
+export interface CalibrationUpdateRequest {
+  user_id: string;
+  run_type: RunType;
+  interval_results: IntervalResult[];
+}
+
+export interface CalibrationUpdateResponse {
+  success: boolean;
+  run_count: number;
+  ve_prompt?: {
+    threshold: "vt1" | "vt2";
+    current_value: number;
+    proposed_value: number;
+    pending_delta: number;
+  } | null;
+}
+
+export interface VEApprovalRequest {
+  user_id: string;
+  threshold: "vt1" | "vt2";
+  approved: boolean;
 }

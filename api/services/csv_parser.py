@@ -196,9 +196,9 @@ def parse_ios_csv(csv_content: str) -> Tuple[pd.DataFrame, Dict[str, Any], pd.Da
 
     # Set defaults for VT1 runs if not specified
     if 'run_type' not in run_params:
-        run_params['run_type'] = RunType.VT1_STEADY
+        run_params['run_type'] = RunType.MODERATE
 
-    if run_params['run_type'] == RunType.VT1_STEADY:
+    if run_params['run_type'] == RunType.MODERATE:
         run_params['num_intervals'] = 1
         if 'phase_duration' in run_params:
             run_params['interval_duration'] = run_params['phase_duration']

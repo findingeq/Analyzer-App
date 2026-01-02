@@ -47,7 +47,7 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 | `HEAVY` | Heavy | Between VT1 and VT2 |
 | `SEVERE` | Severe | Above VT2 threshold |
 
-**Note**: All three domains can have intervals. Enum values to be renamed from `VT1_STEADY`/`VT2_INTERVAL`.
+**Note**: All three domains can have intervals. ✅ Enum values renamed from legacy `VT1_STEADY`/`VT2_INTERVAL`.
 
 ---
 
@@ -226,22 +226,204 @@ When running analysis:
 
 **iPhone repo**: https://github.com/findingeq/vt-threshold-app
 
-To investigate:
-- Existing sync infrastructure between web and mobile
-- API endpoints for pushing updated thresholds
-- Storage mechanism on mobile side
+### Current iOS App Architecture
+
+The iOS app (Flutter/Dart) stores VT thresholds locally:
+- **Storage**: SharedPreferences with keys `vt1_ve` and `vt2_ve`
+- **Defaults**: VT1 = 60.0 L/min, VT2 = 80.0 L/min
+- **State Management**: `AppState` class extends `ChangeNotifier` (Provider pattern)
+- **Update Methods**: `setVt1Ve()` and `setVt2Ve()` persist and notify listeners
+
+The iOS app also uses **sigma_pct** in CUSUM calculations (`cusum_processor.dart`):
+- **Moderate**: 10.0% (hardcoded)
+- **Heavy/Severe**: 5.0% (hardcoded)
+- Used to calculate: `k = 0.5 × sigma`, `h = 5.0 × sigma`
+
+### Current Cloud Integration
+
+The app has **upload-only** capability:
+- `uploadToCloud()` POSTs workout data to Railway endpoint
+- **No authentication** (no API keys or tokens)
+- **No download/sync** for thresholds or sigma values
+
+### Required iOS App Changes
+
+To enable automatic threshold sync, add the following to the iOS app:
+
+#### 1. New API Service Method (in `workout_data_service.dart`)
+
+```dart
+/// Fetches calibrated parameters from the cloud
+/// Returns null if no calibration data exists or on error
+Future<Map<String, dynamic>?> fetchCalibratedParams(String userId) async {
+  try {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/api/calibration/params?user_id=$userId'),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {
+        'vt1_ve': data['vt1_ve']?.toDouble(),
+        'vt2_ve': data['vt2_ve']?.toDouble(),
+        'sigma_pct_moderate': data['sigma_pct_moderate']?.toDouble(),
+        'sigma_pct_heavy': data['sigma_pct_heavy']?.toDouble(),
+        'sigma_pct_severe': data['sigma_pct_severe']?.toDouble(),
+      };
+    }
+    return null;
+  } catch (e) {
+    print('Error fetching calibrated params: $e');
+    return null;
+  }
+}
+```
+
+#### 2. Add Sigma Storage to AppState (in `app_state.dart`)
+
+```dart
+// Add new keys and state variables
+static const String _sigmaModeratePctKey = 'sigma_pct_moderate';
+static const String _sigmaHeavyPctKey = 'sigma_pct_heavy';
+static const String _sigmaSeverePctKey = 'sigma_pct_severe';
+
+double _sigmaPctModerate = 10.0;  // Default
+double _sigmaPctHeavy = 5.0;      // Default
+double _sigmaPctSevere = 5.0;     // Default
+
+double get sigmaPctModerate => _sigmaPctModerate;
+double get sigmaPctHeavy => _sigmaPctHeavy;
+double get sigmaPctSevere => _sigmaPctSevere;
+
+Future<void> setSigmaPctModerate(double value) async {
+  _sigmaPctModerate = value;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setDouble(_sigmaModeratePctKey, value);
+  notifyListeners();
+}
+
+// Similar setters for Heavy and Severe...
+```
+
+#### 3. Sync Method (in `app_state.dart`)
+
+```dart
+/// Syncs calibrated params from cloud
+/// Shows confirmation dialog if VE change >= 1 L/min
+/// Sigma updates are applied silently
+Future<void> syncParamsFromCloud(BuildContext context) async {
+  final workoutService = WorkoutDataService();
+  final calibrated = await workoutService.fetchCalibratedParams(_userId);
+
+  if (calibrated == null) return;
+
+  // Check for significant VE threshold changes
+  final vt1Change = (calibrated['vt1_ve']! - _vt1Ve).abs();
+  final vt2Change = (calibrated['vt2_ve']! - _vt2Ve).abs();
+
+  if (vt1Change >= 1.0 || vt2Change >= 1.0) {
+    // Show confirmation dialog for VE thresholds only
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Update Thresholds?'),
+        content: Text(
+          'Calibration suggests:\n'
+          'VT1: ${calibrated['vt1_ve']!.toStringAsFixed(1)} L/min\n'
+          'VT2: ${calibrated['vt2_ve']!.toStringAsFixed(1)} L/min\n\n'
+          'Apply these changes?'
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('No')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Yes')),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      if (calibrated['vt1_ve'] != null) await setVt1Ve(calibrated['vt1_ve']!);
+      if (calibrated['vt2_ve'] != null) await setVt2Ve(calibrated['vt2_ve']!);
+    }
+  }
+
+  // Sigma values are updated silently (no user prompt needed)
+  if (calibrated['sigma_pct_moderate'] != null) {
+    await setSigmaPctModerate(calibrated['sigma_pct_moderate']!);
+  }
+  if (calibrated['sigma_pct_heavy'] != null) {
+    await setSigmaPctHeavy(calibrated['sigma_pct_heavy']!);
+  }
+  if (calibrated['sigma_pct_severe'] != null) {
+    await setSigmaPctSevere(calibrated['sigma_pct_severe']!);
+  }
+}
+```
+
+#### 4. Update CUSUM Processor (in `cusum_processor.dart`)
+
+```dart
+// Change from hardcoded values:
+// final sigmaPct = runType == RunType.moderate ? 10.0 : 5.0;
+
+// To using calibrated values from AppState:
+double getSigmaPct(RunType runType, AppState appState) {
+  switch (runType) {
+    case RunType.moderate:
+      return appState.sigmaPctModerate;
+    case RunType.heavy:
+      return appState.sigmaPctHeavy;
+    case RunType.severe:
+      return appState.sigmaPctSevere;
+  }
+}
+```
+
+#### 5. Trigger Sync on App Launch (in `main.dart`)
+
+```dart
+// After app initialization, attempt to sync calibrated params
+WidgetsBinding.instance.addPostFrameCallback((_) {
+  final appState = Provider.of<AppState>(context, listen: false);
+  appState.syncParamsFromCloud(context);
+});
+```
+
+#### 6. User ID Considerations
+
+Currently the app has no user authentication. Options:
+- **Device ID**: Use a unique device identifier (simple but not cross-device)
+- **Anonymous ID**: Generate and persist a UUID on first launch
+- **Future**: Add proper user authentication for cross-device sync
+
+### Backend Endpoint Required
+
+Add to web app API:
+
+```
+GET /api/calibration/params?user_id={user_id}
+
+Response:
+{
+  "vt1_ve": 62.5,
+  "vt2_ve": 85.0,
+  "sigma_pct_moderate": 9.2,
+  "sigma_pct_heavy": 4.8,
+  "sigma_pct_severe": 5.1,
+  "last_updated": "2026-01-02T12:00:00Z"
+}
+```
 
 ---
 
 ## Code Changes Required
 
-1. **Rename enums**: `VT1_STEADY` → `MODERATE`, `VT2_INTERVAL` → `HEAVY`
-2. **Allow intervals for all domains** (already partially done)
-3. **Backend calibration service** (new) - NIG math with forgetting factor
-4. **Storage/database schema** (new)
-5. **API endpoints** (new)
-6. **Frontend UI**: exclusion checkboxes, approval popup (new)
-7. **Mobile sync** (TBD based on repo investigation)
+1. ✅ **Rename enums**: `VT1_STEADY` → `MODERATE`, `VT2_INTERVAL` → `HEAVY` (complete)
+2. ✅ **Allow intervals for all domains** (complete)
+3. ✅ **Backend calibration service** - NIG math with forgetting factor (`api/services/calibration.py`)
+4. ✅ **Storage/database schema** - Firebase Storage per-user JSON (`api/models/schemas.py`)
+5. ✅ **API endpoints** - CRUD + iOS sync (`api/routers/calibration.py`)
+6. ✅ **Frontend UI**: VE approval popup (complete), exclusion checkboxes (pending)
+7. **Mobile sync** - Code examples provided, iOS app changes required
 
 ---
 
@@ -250,3 +432,7 @@ To investigate:
 | Date | Changes |
 |------|---------|
 | 2026-01-02 | Initial specification |
+| 2026-01-02 | Added iOS app sync recommendations with code examples |
+| 2026-01-02 | Expanded sync to include sigma_pct per domain (not just VE thresholds) |
+| 2026-01-02 | Implemented backend calibration service with NIG algorithm |
+| 2026-01-02 | Implemented frontend VE approval dialog and calibration integration |
