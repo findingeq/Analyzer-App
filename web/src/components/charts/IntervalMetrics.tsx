@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from "react";
 import { useRunStore } from "@/store/use-run-store";
-import { IntervalStatus } from "@/lib/api-types";
+import { IntervalStatus, RunType } from "@/lib/api-types";
 
 // =============================================================================
 // Color Theme (matches MainChart)
@@ -47,10 +47,14 @@ export function IntervalMetrics() {
     zoomStart,
     zoomEnd,
     resetZoom,
+    runType,
   } = useRunStore();
 
-  // Split slope ratio threshold
+  // Split slope ratio threshold (only used for Heavy/Severe)
   const splitSlopeThreshold = 1.2;
+
+  // Moderate runs don't show split slope metrics
+  const showSplitSlope = runType !== RunType.MODERATE;
 
   // Calculate interval positions as percentages (based on interval range, not breath data)
   const intervalPositions = useMemo(() => {
@@ -191,7 +195,7 @@ export function IntervalMetrics() {
                 {overallSlope >= 0 ? "+" : ""}{overallSlope.toFixed(2)}%/min
               </div>
             )}
-            {splitRatio !== null && splitRatio !== undefined && (
+            {showSplitSlope && splitRatio !== null && splitRatio !== undefined && (
               <div className={`text-xs ${splitRatioColor}`}>
                 {splitRatioTriggered ? ">1.2x" : "≤1.2x"}
               </div>
