@@ -241,3 +241,41 @@ def get_blended_params_endpoint(
         "run_type": run_type.value,
         **params
     }
+
+
+@router.post("/set-ve-threshold")
+def set_ve_threshold_manual(
+    user_id: str = Query(..., description="User/device identifier"),
+    threshold: str = Query(..., description="'vt1' or 'vt2'"),
+    value: float = Query(..., description="New threshold value in L/min")
+):
+    """
+    Manually set a VE threshold value.
+
+    Called when user manually changes threshold in the UI.
+    This becomes the new baseline for calibration.
+    """
+    if threshold not in ('vt1', 'vt2'):
+        raise HTTPException(status_code=400, detail="threshold must be 'vt1' or 'vt2'")
+
+    state = _load_calibration_state(user_id)
+
+    if threshold == 'vt1':
+        state.vt1_ve.current_value = value
+        state.vt1_ve.last_prompted_value = value
+        state.vt1_ve.pending_delta = 0.0
+    else:
+        state.vt2_ve.current_value = value
+        state.vt2_ve.last_prompted_value = value
+        state.vt2_ve.pending_delta = 0.0
+
+    # Enforce VT1 < VT2 constraint
+    state = enforce_ordinal_constraints(state)
+
+    _save_calibration_state(user_id, state)
+
+    return {
+        "success": True,
+        "threshold": threshold,
+        "value": state.vt1_ve.current_value if threshold == 'vt1' else state.vt2_ve.current_value
+    }
