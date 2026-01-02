@@ -157,13 +157,10 @@ export function IntervalMetrics() {
             ? "text-amber-400"
             : "text-emerald-400";
 
-        // Split slope ratio: Green if < 1.2x OR if slope2 < 1%/min; Red if both conditions met
+        // Split slope ratio: Green if <= 1.2x; Red if > 1.2x
         const splitRatio = result.split_slope_ratio;
-        const slope2 = result.slope2_pct;
         const splitRatioTriggered = splitRatio !== null && splitRatio !== undefined
-          && slope2 !== null && slope2 !== undefined
-          && splitRatio >= splitSlopeThreshold
-          && slope2 >= 1.0;  // Require minimum 1%/min in 3rd segment
+          && splitRatio >= splitSlopeThreshold;
         const splitRatioColor = splitRatioTriggered ? "text-red-400" : "text-emerald-400";
 
         return (
@@ -196,7 +193,7 @@ export function IntervalMetrics() {
             )}
             {splitRatio !== null && splitRatio !== undefined && (
               <div className={`text-xs ${splitRatioColor}`}>
-                {splitRatio.toFixed(2)}x
+                {splitRatioTriggered ? ">1.2x" : "≤1.2x"}
               </div>
             )}
           </button>
