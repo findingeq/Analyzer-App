@@ -240,7 +240,7 @@ DEFAULT_PARAMS = {
         'expected_drift_pct': 1.0,
         'max_drift_pct': 3.0,
         'sigma_pct': 5.0,
-        'split_ratio': 1.0
+        'split_ratio': 1.2
     },
     'severe': {
         'expected_drift_pct': 2.0,
