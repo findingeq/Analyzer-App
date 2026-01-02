@@ -27,18 +27,32 @@ class AnalysisParams(BaseModel):
         description="Default Phase III onset if detection fails (seconds)"
     )
 
-    # VT1-specific parameters
-    vt1_blanking_time: float = Field(
+    # VT1-specific parameters (moderate domain)
+    # For runs < 20 min: search 90s - 6min for Phase II end
+    vt1_phase3_min_time_short: float = Field(
+        default=90.0,
+        description="Minimum time for Phase III detection for VT1 runs < 20 min (seconds)"
+    )
+    vt1_phase3_max_time_short: float = Field(
         default=360.0,
-        description="Fixed blanking time for VT1 (6 minutes in seconds)"
+        description="Maximum time for Phase III detection for VT1 runs < 20 min (seconds)"
     )
-    vt1_calibration_short: float = Field(
+    # For runs >= 20 min: search 90s - 15min for Phase II end (thermal equilibration)
+    vt1_phase3_min_time_long: float = Field(
+        default=90.0,
+        description="Minimum time for Phase III detection for VT1 runs >= 20 min (seconds)"
+    )
+    vt1_phase3_max_time_long: float = Field(
+        default=900.0,
+        description="Maximum time for Phase III detection for VT1 runs >= 20 min (15 min in seconds)"
+    )
+    vt1_phase3_default: float = Field(
+        default=360.0,
+        description="Default Phase III onset for VT1 if detection fails (6 min in seconds)"
+    )
+    vt1_calibration_duration: float = Field(
         default=60.0,
-        description="Calibration window for VT1 runs < 15 min (1 minute)"
-    )
-    vt1_calibration_long: float = Field(
-        default=240.0,
-        description="Calibration window for VT1 runs >= 15 min (4 minutes)"
+        description="Calibration window for VT1 runs (1 minute)"
     )
 
     # VT2-specific parameters

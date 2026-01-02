@@ -196,23 +196,26 @@ def analyze_interval_segmented(
 
     # Phase III onset detection
     if run_type == RunType.MODERATE:
-        # VT1: Fixed blanking at 6 minutes
-        phase3_onset_rel = params.vt1_blanking_time
-        phase3_onset_time = phase3_onset_rel + breath_times_raw[0]
-
-        # Fit simple linear model for segment 1
-        ramp_mask = bin_times_rel <= phase3_onset_rel
-        if np.sum(ramp_mask) >= 2:
-            ramp_times = bin_times_rel[ramp_mask]
-            ramp_ve = ve_binned[ramp_mask]
-            b1 = (ramp_ve[-1] - ramp_ve[0]) / (ramp_times[-1] - ramp_times[0]) if (ramp_times[-1] - ramp_times[0]) > 0 else 0
-            b0 = ramp_ve[0] - b1 * ramp_times[0]
+        # VT1: Use robust hinge with duration-dependent bounds
+        # For runs >= 20 min: search 90s - 15min (thermal equilibration)
+        # For runs < 20 min: search 90s - 6min
+        if interval_duration_min >= 20.0:
+            tau_min = params.vt1_phase3_min_time_long
+            tau_max = params.vt1_phase3_max_time_long
         else:
-            b0 = np.mean(ve_binned) if len(ve_binned) > 0 else 0
-            b1 = 0
-        b2 = 0
+            tau_min = params.vt1_phase3_min_time_short
+            tau_max = params.vt1_phase3_max_time_short
+
+        tau, b0, b1, b2, _, detection_succeeded = fit_robust_hinge(
+            bin_times_rel, ve_binned, params,
+            tau_min_override=tau_min,
+            tau_max_override=tau_max,
+            tau_default_override=params.vt1_phase3_default
+        )
+        phase3_onset_rel = tau
+        phase3_onset_time = tau + breath_times_raw[0]
     else:
-        # VT2: Use robust hinge model
+        # VT2: Use robust hinge model with default VT2 bounds
         tau, b0, b1, b2, _, detection_succeeded = fit_robust_hinge(bin_times_rel, ve_binned, params)
         phase3_onset_rel = tau
         phase3_onset_time = tau + breath_times_raw[0]
@@ -233,12 +236,9 @@ def analyze_interval_segmented(
 
     # Set calibration window
     if run_type == RunType.MODERATE:
+        # VT1: 1 minute calibration after Phase II ends
         cal_start = phase3_onset_rel
-        if interval_duration_min >= 15.0:
-            cal_duration = params.vt1_calibration_long
-        else:
-            cal_duration = params.vt1_calibration_short
-        cal_end = cal_start + cal_duration
+        cal_end = cal_start + params.vt1_calibration_duration
     else:
         cal_start = phase3_onset_rel
         cal_end = phase3_onset_rel + params.vt2_calibration_duration
@@ -320,7 +320,7 @@ def analyze_interval_segmented(
         slope_line_times_rel = np.array([])
         slope_line_ve = np.array([])
 
-    # Second hinge detection
+    # Second hinge detection (only for Heavy/Severe, not Moderate)
     post_phase3_mask = bin_times_rel >= phase3_onset_rel
     post_phase3_times = bin_times_rel[post_phase3_mask]
     post_phase3_ve = ve_binned[post_phase3_mask]
@@ -335,7 +335,27 @@ def analyze_interval_segmented(
     segment3_times_rel = None
     segment3_ve = None
 
-    if len(post_phase3_times) >= 4:
+    if run_type == RunType.MODERATE:
+        # Moderate runs: single slope from Phase III onset to end (no split slope)
+        # Use the overall slope line for segment 2, no segment 3
+        if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
+            phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
+            anchor_ve = ve_binned[phase3_idx]
+
+            # Create segment 2 from phase3 onset to interval end using overall slope
+            segment2_times_rel = np.array([phase3_onset_rel, interval_end_rel])
+            # Calculate VE at these times using the overall slope fit
+            slope_line_intercept = slope_line_ve[0] - slope * (slope_line_times_rel[0] / 60.0) if len(slope_line_ve) > 0 else cal_ve_mean
+            segment2_ve = slope_line_intercept + slope * (segment2_times_rel / 60.0)
+
+            # Adjust to anchor at phase3_onset
+            ve_offset = anchor_ve - segment2_ve[0]
+            segment2_ve = segment2_ve + ve_offset
+
+            # Make segment1 end at the anchor point
+            segment1_ve[-1] = anchor_ve
+    elif len(post_phase3_times) >= 4:
+        # Heavy/Severe runs: fit second hinge for split slope analysis
         tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge(
             post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
         )
@@ -410,32 +430,49 @@ def analyze_interval_segmented(
     cusum_alarm = peak_cusum >= h
     cusum_recovered = cusum_alarm and (final_cusum <= recovered_threshold)
     overall_slope_pct = (slope / cal_ve_mean * 100.0) if cal_ve_mean > 0 else 0.0
-    split_ratio = split_slope_ratio if split_slope_ratio is not None else 1.0
 
-    low_threshold = expected_drift_pct
-    high_threshold = max_drift_threshold
-    split_ratio_threshold = 1.2
+    if run_type == RunType.MODERATE:
+        # Moderate domain: simplified classification using only expected_drift
+        # No max_drift or split_ratio - just expected_drift (0.3%/min default)
+        drift_threshold = expected_drift_pct
 
-    if not cusum_alarm or cusum_recovered:
-        if overall_slope_pct < low_threshold:
-            status = IntervalStatus.BELOW_THRESHOLD
-        elif overall_slope_pct < high_threshold:
-            if split_ratio < split_ratio_threshold:
+        if not cusum_alarm or cusum_recovered:
+            if overall_slope_pct < drift_threshold:
                 status = IntervalStatus.BELOW_THRESHOLD
             else:
                 status = IntervalStatus.BORDERLINE
         else:
-            status = IntervalStatus.BORDERLINE
-    else:
-        if overall_slope_pct < low_threshold:
-            status = IntervalStatus.BORDERLINE
-        elif overall_slope_pct < high_threshold:
-            if split_ratio < split_ratio_threshold:
+            if overall_slope_pct < drift_threshold:
                 status = IntervalStatus.BORDERLINE
             else:
                 status = IntervalStatus.ABOVE_THRESHOLD
+    else:
+        # Heavy/Severe domain: full classification with max_drift and split_ratio
+        split_ratio = split_slope_ratio if split_slope_ratio is not None else 1.0
+        low_threshold = expected_drift_pct
+        high_threshold = max_drift_threshold
+        split_ratio_threshold = 1.2
+
+        if not cusum_alarm or cusum_recovered:
+            if overall_slope_pct < low_threshold:
+                status = IntervalStatus.BELOW_THRESHOLD
+            elif overall_slope_pct < high_threshold:
+                if split_ratio < split_ratio_threshold:
+                    status = IntervalStatus.BELOW_THRESHOLD
+                else:
+                    status = IntervalStatus.BORDERLINE
+            else:
+                status = IntervalStatus.BORDERLINE
         else:
-            status = IntervalStatus.ABOVE_THRESHOLD
+            if overall_slope_pct < low_threshold:
+                status = IntervalStatus.BORDERLINE
+            elif overall_slope_pct < high_threshold:
+                if split_ratio < split_ratio_threshold:
+                    status = IntervalStatus.BORDERLINE
+                else:
+                    status = IntervalStatus.ABOVE_THRESHOLD
+            else:
+                status = IntervalStatus.ABOVE_THRESHOLD
 
     # Convert to absolute times
     abs_bin_times = bin_times_rel + breath_times_raw[0]

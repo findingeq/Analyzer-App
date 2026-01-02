@@ -563,23 +563,17 @@ def update_calibration_from_interval(
         domain.expected_drift = update_nig_posterior(domain.expected_drift, drift_pct, lambda_)
         domain.sigma = update_nig_posterior(domain.sigma, sigma_pct, lambda_)
 
-        # Update split_ratio only for Moderate and Heavy (not Severe)
-        if run_type != RunType.SEVERE:
+        # Update split_ratio only for Heavy (not Moderate or Severe)
+        # Moderate doesn't use split_ratio in classification
+        # Severe doesn't have a max_drift ceiling to inform
+        if run_type == RunType.HEAVY:
             if split_ratio is not None and split_ratio > 0:
                 domain.split_ratio = update_nig_posterior(domain.split_ratio, split_ratio, lambda_)
 
-        # Cross-domain max_drift calibration:
-        # - max_drift_moderate ← Heavy's expected_drift (if drifting like Heavy, you're above VT1)
-        # - max_drift_heavy ← Severe's expected_drift (if drifting like Severe, you're above VT2)
-        if run_type == RunType.HEAVY:
-            # Heavy's expected_drift becomes Moderate's ceiling
-            moderate_domain = state.get_domain_posterior(RunType.MODERATE)
-            heavy_expected = domain.expected_drift.get_point_estimate()
-            moderate_domain.max_drift = update_nig_posterior(
-                moderate_domain.max_drift, heavy_expected, lambda_
-            )
-        elif run_type == RunType.SEVERE:
-            # Severe's expected_drift becomes Heavy's ceiling
+        # Cross-domain max_drift calibration (only for Heavy domain)
+        # Severe's expected_drift becomes Heavy's ceiling
+        # Note: Moderate no longer uses max_drift in classification
+        if run_type == RunType.SEVERE:
             heavy_domain = state.get_domain_posterior(RunType.HEAVY)
             severe_expected = domain.expected_drift.get_point_estimate()
             heavy_domain.max_drift = update_nig_posterior(

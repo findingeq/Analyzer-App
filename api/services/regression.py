@@ -83,7 +83,10 @@ def fit_single_slope(t: np.ndarray, ve: np.ndarray) -> Tuple[float, float]:
 def fit_robust_hinge(
     t: np.ndarray,
     ve: np.ndarray,
-    params: AnalysisParams
+    params: AnalysisParams,
+    tau_min_override: float = None,
+    tau_max_override: float = None,
+    tau_default_override: float = None
 ) -> Tuple[float, float, float, float, float, bool]:
     """
     Fit a robust hinge model to detect Phase III onset.
@@ -96,17 +99,25 @@ def fit_robust_hinge(
     - beta1 + beta2: Slope of Phase III (drift)
 
     Uses Huber loss for robustness to outliers.
-    Constrains breakpoint detection to params.phase3_min_time - params.phase3_max_time.
+    Constrains breakpoint detection to specified bounds.
     If detection fails or breakpoint is at bounds, returns default Phase III onset.
 
     Args:
         t: Time values (seconds relative to interval start)
         ve: VE values (L/min)
         params: Analysis parameters
+        tau_min_override: Optional minimum tau bound (overrides params)
+        tau_max_override: Optional maximum tau bound (overrides params)
+        tau_default_override: Optional default tau if detection fails (overrides params)
 
     Returns:
         Tuple of (tau, beta0, beta1, beta2, loss, detection_succeeded)
     """
+    # Determine tau bounds and default
+    tau_min_param = tau_min_override if tau_min_override is not None else params.phase3_min_time
+    tau_max_param = tau_max_override if tau_max_override is not None else params.phase3_max_time
+    tau_default = tau_default_override if tau_default_override is not None else params.phase3_default
+
     # Use user override if provided
     if params.phase3_onset_override is not None:
         tau = params.phase3_onset_override
@@ -131,9 +142,9 @@ def fit_robust_hinge(
         final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
         return tau, b0, b1, b2, final_loss, True
 
-    # Set tau bounds based on params (90-240 seconds constraint)
-    tau_min = params.phase3_min_time
-    tau_max = params.phase3_max_time
+    # Set tau bounds
+    tau_min = tau_min_param
+    tau_max = tau_max_param
 
     # Ensure bounds are within data range
     t_min = t[0]
@@ -143,7 +154,7 @@ def fit_robust_hinge(
 
     # Check if we have enough data for constrained detection
     if tau_max <= tau_min:
-        tau = params.phase3_default
+        tau = tau_default
         b1 = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
         b0 = ve[0] - b1 * t[0]
         b2 = 0
@@ -187,10 +198,10 @@ def fit_robust_hinge(
         # Check if tau is at the bounds (indicates detection failed)
         if abs(tau - tau_min) < 1.0 or abs(tau - tau_max) < 1.0:
             detection_succeeded = False
-            tau = params.phase3_default
+            tau = tau_default
     except Exception:
         detection_succeeded = False
-        tau = params.phase3_default
+        tau = tau_default
         b1 = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
         b0 = ve[0] - b1 * t[0]
         b2 = 0

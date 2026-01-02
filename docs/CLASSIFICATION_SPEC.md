@@ -41,13 +41,7 @@ Two analysis modes are available, selected based on interval duration:
 
 ### Phase III Onset Detection
 
-**For VT1 (Moderate domain)**:
-- Fixed blanking at 6 minutes (360 seconds)
-- No hinge detection needed
-
-**For VT2/Severe (Heavy domain)**:
-
-Uses a piecewise linear "hinge" model with Huber loss:
+All domains use a piecewise linear "hinge" model with Huber loss:
 
 ```
 VE(t) = β₀ + β₁·t + β₂·max(0, t - τ)
@@ -58,13 +52,18 @@ Where:
 - `β₁` = Slope of Phase II (initial ramp)
 - `β₁ + β₂` = Slope of Phase III (drift)
 
-**Detection constraints**:
+**Detection constraints by domain**:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `phase3_min_time` | 90 sec | Minimum allowed τ |
-| `phase3_max_time` | 180 sec | Maximum allowed τ |
-| `phase3_default` | 150 sec | Fallback if detection fails |
+| Domain | Run Duration | τ Min | τ Max | τ Default |
+|--------|--------------|-------|-------|-----------|
+| Moderate | < 20 min | 90 sec | 6 min (360s) | 6 min |
+| Moderate | ≥ 20 min | 90 sec | 15 min (900s) | 6 min |
+| Heavy/Severe | Any | 90 sec | 3 min (180s) | 2.5 min |
+
+**Rationale for Moderate duration-dependent bounds**:
+- Longer runs (≥20 min) allow more time for thermal equilibration
+- Body temperature rise can delay true steady-state onset
+- Wider search window accommodates individual variability
 
 **Detection failure conditions**:
 - τ converges to constraint boundary (within 1 second)
@@ -77,8 +76,7 @@ Where:
 
 | Run Type | Calibration Start | Calibration Duration |
 |----------|-------------------|---------------------|
-| Moderate (< 15 min) | Phase III onset | 60 seconds |
-| Moderate (≥ 15 min) | Phase III onset | 240 seconds |
+| Moderate | Phase III onset | 60 seconds |
 | Heavy/Severe | Phase III onset | 60 seconds |
 
 **Outputs**:
@@ -143,7 +141,13 @@ Sᵢ = max(0, Sᵢ₋₁ + (VE_observed[i] - ceiling_ve) - k)
 | `h_multiplier` | 5.0 | 5.0 |
 | `sigma_pct` | 7.0% | 4.0% |
 | `expected_drift_pct` | 0.3%/min | 1.0%/min |
-| `max_drift_pct` | 1.0%/min | 3.0%/min |
+| `max_drift_pct` | N/A | 3.0%/min |
+| `split_ratio_threshold` | N/A | 1.2 |
+
+**Note**: Moderate domain uses only `expected_drift_pct` for classification. The `max_drift_pct` and `split_ratio_threshold` are not used because:
+1. True moderate exercise (below VT1) has virtually no drift
+2. If drift exceeds expected (0.3%/min), runner is likely in heavy domain
+3. In heavy domain, the VO2 slow component plateaus after 6-10 minutes, so split slope ratio adds no diagnostic value
 
 ---
 
@@ -172,9 +176,16 @@ Where `δ = 5.0` (Huber delta parameter)
 - `slope`: VE change per minute (L/min per minute)
 - `slope_pct`: `(slope / cal_ve_mean) × 100` (% per minute)
 
-### Split Slope (Two-Segment)
+**Used by**: All domains (Moderate, Heavy, Severe)
+
+### Split Slope (Two-Segment) — Heavy/Severe Only
 
 Detects slope change within Phase III using a **second hinge model**.
+
+**Not used for Moderate domain** because:
+- Moderate exercise has minimal drift (steady state)
+- Heavy domain VO2 slow component plateaus after 6-10 minutes
+- Split slope ratio on small numbers is noisy and unreliable
 
 **Constraint window**:
 - Start: Phase III onset + 120 seconds
@@ -204,7 +215,44 @@ Where:
 
 ## Classification Tree
 
-### Segmented Analysis Classification
+### Moderate Domain (VT1) Classification
+
+**Inputs**:
+- `cusum_alarm`: Did CUSUM exceed threshold h?
+- `cusum_recovered`: Did CUSUM return below h/2?
+- `overall_slope_pct`: Total drift rate (%/min)
+
+**Threshold**:
+- `drift_threshold` = expected_drift_pct (0.3%/min default)
+
+**Decision Tree**:
+
+```
+IF (cusum_alarm = FALSE) OR (cusum_recovered = TRUE):
+│
+├── IF overall_slope_pct < drift_threshold:
+│   └── BELOW_THRESHOLD
+│
+└── ELSE:
+    └── BORDERLINE
+
+ELSE (cusum_alarm = TRUE AND cusum_recovered = FALSE):
+│
+├── IF overall_slope_pct < drift_threshold:
+│   └── BORDERLINE
+│
+└── ELSE:
+    └── ABOVE_THRESHOLD
+```
+
+**Rationale**: Moderate domain classification is simplified because:
+- True moderate exercise has virtually no VO2 drift
+- Any drift exceeding 0.3%/min suggests runner is not in moderate domain
+- No need for max_drift or split_ratio checks
+
+---
+
+### Heavy/Severe Domain (VT2) Classification
 
 **Inputs**:
 - `cusum_alarm`: Did CUSUM exceed threshold h?
@@ -213,8 +261,8 @@ Where:
 - `split_slope_ratio`: Ratio of segment 2 to segment 1 slopes
 
 **Thresholds**:
-- `low_threshold` = expected_drift_pct (domain-specific)
-- `high_threshold` = max_drift_pct (domain-specific)
+- `low_threshold` = expected_drift_pct (1.0%/min default)
+- `high_threshold` = max_drift_pct (3.0%/min default)
 - `split_ratio_threshold` = 1.2
 
 **Decision Tree**:
@@ -275,7 +323,7 @@ ELSE (cusum_alarm = TRUE AND cusum_recovered = FALSE):
 | BORDERLINE | Inconclusive - some indicators elevated | Excluded from calibration |
 | ABOVE_THRESHOLD | Clear drift detected | May trigger VE threshold update |
 
-### Why Split Slope Ratio?
+### Why Split Slope Ratio? (Heavy/Severe Only)
 
 Distinguishes between:
 - **Stable drift** (ratio ≈ 1.0): Constant slow drift throughout
@@ -283,6 +331,8 @@ Distinguishes between:
 - **Decelerating drift** (ratio < 1.0): Slope decreases (fatigue response)
 
 Accelerating drift is more indicative of exceeding threshold.
+
+**Not used for Moderate domain** because the VO2 slow component in heavy domain plateaus after 6-10 minutes, so an accelerating slope pattern in a "moderate" run would indicate severe domain, not heavy. The expected_drift threshold alone is sufficient for moderate classification.
 
 ### Why CUSUM Recovery Matters?
 
@@ -326,10 +376,12 @@ A recovered CUSUM indicates:
 | VE binned line | Post-filtering | Filtered VE over time (with gradient) |
 | Breath dots | Post-median only | Individual breath values |
 | Segment 1 line | Hinge model | Phase I+II (ramp-up) slope |
-| Segment 2 line | Second hinge | Early Phase III slope |
-| Segment 3 line | Second hinge | Late Phase III slope |
+| Segment 2 line | Overall slope (Moderate) or Second hinge (Heavy/Severe) | Phase III slope |
+| Segment 3 line | Second hinge (Heavy/Severe only) | Late Phase III slope |
 | CUSUM line | Accumulation | Green until alarm, red after |
 | Interval shading | Classification | Green/yellow/red background |
+
+**Note**: Moderate runs display only Segment 1 (ramp) and Segment 2 (overall drift). Heavy/Severe runs display Segment 1, Segment 2 (early Phase III), and Segment 3 (late Phase III).
 
 ---
 
@@ -338,3 +390,4 @@ A recovered CUSUM indicates:
 | Date | Changes |
 |------|---------|
 | 2026-01-02 | Initial specification |
+| 2026-01-02 | Moderate domain updates: hinge model for Phase III detection with duration-dependent bounds (90s-6min for <20min runs, 90s-15min for ≥20min runs); removed max_drift and split_ratio from classification; simplified to single expected_drift threshold; 1-minute calibration for all runs |

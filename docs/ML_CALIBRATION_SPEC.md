@@ -75,12 +75,14 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 
 ### Per-Domain Parameters:
 
-| Parameter | Description | Ordinal Constraint |
-|-----------|-------------|-------------------|
-| `expected_drift_pct` | Expected drift rate (%/min) | Moderate < Heavy < Severe |
-| `max_drift_pct` | Max acceptable drift (%/min) | Moderate < Heavy < Severe |
-| `sigma_pct` | Noise/variability (% of baseline) | **NONE** |
-| `split_ratio` | Slope acceleration ratio | **NONE** |
+| Parameter | Moderate | Heavy | Severe | Ordinal Constraint |
+|-----------|----------|-------|--------|-------------------|
+| `expected_drift_pct` | ✓ | ✓ | ✓ | Moderate < Heavy < Severe |
+| `max_drift_pct` | — | ✓ | — | Heavy only |
+| `sigma_pct` | ✓ | ✓ | ✓ | **NONE** |
+| `split_ratio` | — | ✓ | — | Heavy only |
+
+**Note**: Moderate domain classification uses only expected_drift (0.3%/min), not max_drift or split_ratio. Severe calibrates expected_drift to inform Heavy's max_drift ceiling.
 
 ### Global VE Thresholds:
 
@@ -134,18 +136,20 @@ The observed sigma is calculated as a percentage of baseline VE and fed into cal
 
 | Run Domain | Expected Outcome | Parameters Updated |
 |------------|------------------|-------------------|
-| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, sigma, split_ratio |
-| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, sigma, split_ratio; **Moderate: max_drift** |
+| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, sigma only |
+| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, sigma, split_ratio |
 | **Severe** | ABOVE_THRESHOLD | Severe: expected_drift, sigma only; **Heavy: max_drift** |
 
 ### Cross-Domain max_drift Calibration:
 
-Instead of calibrating max_drift within the same domain, we use **cross-domain calibration**:
+Only Heavy domain uses max_drift for classification:
 
-- **max_drift_moderate** ← Heavy's expected_drift (if you drift like Heavy, you're above VT1)
 - **max_drift_heavy** ← Severe's expected_drift (if you drift like Severe, you're above VT2)
 
-This creates natural domain boundaries where "too much drift" = "typical drift for the next domain up".
+**Note**: Moderate domain no longer uses max_drift. Classification is based solely on expected_drift (0.3%/min). The physiological rationale:
+1. True moderate exercise (below VT1) has virtually no VO2 drift
+2. Any drift exceeding expected indicates the runner is not in moderate domain
+3. The VO2 slow component in heavy domain plateaus after 6-10 minutes, so split_ratio adds no diagnostic value for "mistaken moderate" runs
 
 ### Severe Domain Specifics:
 
@@ -626,3 +630,5 @@ Response:
 | 2026-01-02 | Updated split_ratio defaults: Moderate=1.0, Heavy=1.2, Severe=1.2 |
 | 2026-01-02 | Expanded sidebar sync to include all advanced params (sigma, drift, max_drift, split_ratio) |
 | 2026-01-02 | Added split_ratio inputs to sidebar Advanced section |
+| 2026-01-02 | Moderate domain now only calibrates expected_drift and sigma (not max_drift or split_ratio) |
+| 2026-01-02 | Removed cross-domain max_drift calibration from Heavy→Moderate (Moderate classification uses only expected_drift) |
