@@ -89,6 +89,37 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 | `vt1_ve_ceiling` | VT1 VE threshold (L/min) | VT1 < VT2 |
 | `vt2_ve_ceiling` | VT2 VE threshold (L/min) | VT1 < VT2 |
 
+### Default Parameter Values:
+
+| Parameter | Moderate | Heavy | Severe |
+|-----------|----------|-------|--------|
+| `expected_drift_pct` | 0.5 | 1.0 | 2.0 |
+| `max_drift_pct` | 2.0 | 3.0 | 5.0 |
+| `sigma_pct` | 7.0 | 4.0 | 4.0 |
+| `split_ratio` | 1.0 | 1.2 | 1.2 |
+
+---
+
+## Sigma Calculation: MADSD Method
+
+Sigma (noise level) is calculated from actual data using **MAD of Successive Differences (MADSD)**:
+
+```python
+def calculate_madsd_sigma(ve_binned):
+    diffs = np.diff(ve_binned)           # First differences
+    median_diff = np.median(diffs)        # Median of differences
+    mad = np.median(np.abs(diffs - median_diff))  # MAD
+    sigma = mad * 1.4826 / np.sqrt(2)     # Scale to normal sigma
+    return sigma
+```
+
+**Why MADSD?**
+- **Robust to drift**: Differencing removes linear trends
+- **Robust to outliers**: MAD has 50% breakdown point
+- **Applied post-filtering**: Uses VE data after 3-stage hybrid filtering (median → time-bin → Hampel)
+
+The observed sigma is calculated as a percentage of baseline VE and fed into calibration.
+
 ---
 
 ## Drift/Sigma/Split Calibration Logic
@@ -103,16 +134,30 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 
 | Run Domain | Expected Outcome | Parameters Updated |
 |------------|------------------|-------------------|
-| **Moderate** | BELOW_THRESHOLD | Moderate: drift, sigma, split |
-| **Heavy** | BELOW_THRESHOLD | Heavy: drift, sigma, split |
-| **Severe** | ABOVE_THRESHOLD | Severe: drift, sigma, split |
+| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, sigma, split_ratio |
+| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, sigma, split_ratio; **Moderate: max_drift** |
+| **Severe** | ABOVE_THRESHOLD | Severe: expected_drift, sigma only; **Heavy: max_drift** |
+
+### Cross-Domain max_drift Calibration:
+
+Instead of calibrating max_drift within the same domain, we use **cross-domain calibration**:
+
+- **max_drift_moderate** ← Heavy's expected_drift (if you drift like Heavy, you're above VT1)
+- **max_drift_heavy** ← Severe's expected_drift (if you drift like Severe, you're above VT2)
+
+This creates natural domain boundaries where "too much drift" = "typical drift for the next domain up".
+
+### Severe Domain Specifics:
+
+Severe runs only calibrate **expected_drift** and **sigma** (not split_ratio or max_drift):
+- **expected_drift**: Used to set Heavy's max_drift ceiling
+- **sigma**: Used for CUSUM sensitivity in Severe runs
+- **split_ratio**: Not calibrated (Severe doesn't use split analysis for classification)
+- **max_drift**: Not needed (no domain above Severe)
 
 ### Domain Isolation (No Cross-Pollination):
-- **Moderate runs** → only update Moderate parameters
-- **Heavy runs** → only update Heavy parameters
-- **Severe runs** → only update Severe parameters
 
-Domain models are kept pure. If a Severe run unexpectedly shows low drift, this triggers VT2 threshold adjustment, not Heavy parameter updates.
+Domain models are kept pure for expected_drift, sigma, and split_ratio. If a Severe run unexpectedly shows low drift, this triggers VT2 threshold adjustment, not Heavy parameter updates.
 
 **Rationale**: Heavy domain behavior is concave (drift stabilizes), while Severe is convex (drift accelerates). Cross-pollination would corrupt domain-specific drift shapes.
 
@@ -175,8 +220,13 @@ Both actions reset the posterior, meaning future observations start fresh relati
    - Persisted in cloud per user
    - Endpoint: `POST /api/calibration/toggle`
 
-2. **VT Threshold Sidebar** - auto-populates from calibration
-   - On sidebar load, VT1/VT2 thresholds sync from cloud calibration
+2. **Sidebar Auto-Sync from Calibration**
+   - On sidebar load, all calibrated parameters sync from cloud:
+     - VT1/VT2 thresholds
+     - Sigma % (VT1=Moderate, VT2=Heavy)
+     - Expected Drift % (VT1=Moderate, VT2=Heavy)
+     - Max Drift % (VT1=Moderate, VT2=Heavy)
+     - Split Ratio (VT1=Moderate, VT2=Heavy)
    - User can manually adjust values for specific run analysis
    - Changes are local until explicitly synced
 
@@ -184,9 +234,10 @@ Both actions reset the posterior, meaning future observations start fresh relati
    - Pushes current sidebar VT1/VT2 values to cloud calibration
    - Resets Bayesian posterior to new anchor values
    - Useful when user wants to "lock in" manual adjustments
+   - Note: Advanced params (sigma, drift, etc.) are not synced back (read-only from calibration)
 
-4. **Restore to Last Calibration button** - in VT Thresholds card
-   - Fetches current cloud-calibrated VT1/VT2 values
+4. **Restore from Calibration button** - in VT Thresholds card
+   - Fetches all cloud-calibrated values (VT thresholds + advanced params)
    - Restores sidebar to cloud values (discards local changes)
    - Does not affect the Bayesian posterior
 
@@ -523,9 +574,19 @@ Response:
 {
   "vt1_ve": 62.5,
   "vt2_ve": 85.0,
-  "sigma_pct_moderate": 9.2,
-  "sigma_pct_heavy": 4.8,
-  "sigma_pct_severe": 5.1,
+  "sigma_pct_moderate": 7.0,
+  "sigma_pct_heavy": 4.0,
+  "sigma_pct_severe": 4.0,
+  "expected_drift_moderate": 0.5,
+  "expected_drift_heavy": 1.0,
+  "expected_drift_severe": 2.0,
+  "max_drift_moderate": 1.0,
+  "max_drift_heavy": 2.0,
+  "max_drift_severe": 5.0,
+  "split_ratio_moderate": 1.0,
+  "split_ratio_heavy": 1.2,
+  "split_ratio_severe": 1.2,
+  "enabled": true,
   "last_updated": "2026-01-02T12:00:00Z"
 }
 ```
@@ -558,3 +619,10 @@ Response:
 | 2026-01-02 | Added calibration On/Off toggle with enable/disable endpoint |
 | 2026-01-02 | Added sidebar integration: VT thresholds sync from cloud calibration on load |
 | 2026-01-02 | Added "Sync to Calibration" and "Restore to Last Calibration" buttons |
+| 2026-01-02 | Added MADSD (MAD of Successive Differences) for sigma calculation from actual data |
+| 2026-01-02 | Updated sigma defaults: Moderate=7%, Heavy/Severe=4% (domain-specific) |
+| 2026-01-02 | Implemented cross-domain max_drift calibration (Heavy→Moderate, Severe→Heavy) |
+| 2026-01-02 | Severe runs now only calibrate expected_drift and sigma (not split_ratio) |
+| 2026-01-02 | Updated split_ratio defaults: Moderate=1.0, Heavy=1.2, Severe=1.2 |
+| 2026-01-02 | Expanded sidebar sync to include all advanced params (sigma, drift, max_drift, split_ratio) |
+| 2026-01-02 | Added split_ratio inputs to sidebar Advanced section |

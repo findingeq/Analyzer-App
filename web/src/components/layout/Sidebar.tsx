@@ -104,14 +104,26 @@ export function Sidebar() {
     retry: false,
   });
 
-  // Populate VT thresholds from calibration when loaded (only once on mount)
+  // Populate VT thresholds and advanced params from calibration when loaded (only once on mount)
   useEffect(() => {
     if (calibrationQuery.data && !calibrationLoaded) {
+      // VT thresholds
       setVt1Ceiling(calibrationQuery.data.vt1_ve);
       setVt2Ceiling(calibrationQuery.data.vt2_ve);
+      // Advanced params: VT1=Moderate domain, VT2=Heavy domain
+      setAdvancedParams({
+        sigmaPctVt1: calibrationQuery.data.sigma_pct_moderate,
+        sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
+        expectedDriftVt1: calibrationQuery.data.expected_drift_moderate,
+        expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
+        maxDriftVt1: calibrationQuery.data.max_drift_moderate,
+        maxDriftVt2: calibrationQuery.data.max_drift_heavy,
+        splitRatioVt1: calibrationQuery.data.split_ratio_moderate,
+        splitRatioVt2: calibrationQuery.data.split_ratio_heavy,
+      });
       setCalibrationLoaded(true);
     }
-  }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling]);
+  }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
 
   // Sync current values to calibration
   const handleSyncToCalibration = useCallback(async () => {
@@ -133,14 +145,26 @@ export function Sidebar() {
     setIsRestoring(true);
     try {
       const params = await getCalibrationParams();
+      // VT thresholds
       setVt1Ceiling(params.vt1_ve);
       setVt2Ceiling(params.vt2_ve);
+      // Advanced params: VT1=Moderate domain, VT2=Heavy domain
+      setAdvancedParams({
+        sigmaPctVt1: params.sigma_pct_moderate,
+        sigmaPctVt2: params.sigma_pct_heavy,
+        expectedDriftVt1: params.expected_drift_moderate,
+        expectedDriftVt2: params.expected_drift_heavy,
+        maxDriftVt1: params.max_drift_moderate,
+        maxDriftVt2: params.max_drift_heavy,
+        splitRatioVt1: params.split_ratio_moderate,
+        splitRatioVt2: params.split_ratio_heavy,
+      });
     } catch (error) {
       console.error("Failed to restore from calibration:", error);
     } finally {
       setIsRestoring(false);
     }
-  }, [setVt1Ceiling, setVt2Ceiling]);
+  }, [setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
 
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
@@ -862,6 +886,38 @@ export function Sidebar() {
                     onChange={(e) =>
                       setAdvancedParams({
                         maxDriftVt2: parseFloat(e.target.value) || 3.0,
+                      })
+                    }
+                    className="h-8"
+                  />
+                </div>
+              </div>
+
+              {/* Split Ratio */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Split Ratio (VT1)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={advancedParams.splitRatioVt1}
+                    onChange={(e) =>
+                      setAdvancedParams({
+                        splitRatioVt1: parseFloat(e.target.value) || 1.0,
+                      })
+                    }
+                    className="h-8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Split Ratio (VT2)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={advancedParams.splitRatioVt2}
+                    onChange={(e) =>
+                      setAdvancedParams({
+                        splitRatioVt2: parseFloat(e.target.value) || 1.2,
                       })
                     }
                     className="h-8"

@@ -239,6 +239,8 @@ export async function updateCalibration(
   userId?: string
 ): Promise<CalibrationUpdateResponse> {
   const uid = userId || getOrCreateUserId();
+  // Domain-specific sigma defaults: VT1/Moderate=7%, VT2/Heavy/Severe=4%
+  const defaultSigmaPct = runType === "MODERATE" ? 7.0 : 4.0;
   const mappedResults: CalibrationUpdateRequest["interval_results"] = intervalResults.map((r) => ({
     start_time: r.start_time,
     end_time: r.end_time,
@@ -246,7 +248,7 @@ export async function updateCalibration(
     ve_drift_pct: r.ve_drift_pct,
     avg_ve: r.avg_ve,
     split_slope_ratio: r.split_slope_ratio,
-    sigma_pct: 5.0, // Default, would come from analysis params
+    sigma_pct: r.observed_sigma_pct ?? defaultSigmaPct, // MADSD-calculated, domain-specific fallback
   }));
   return fetchApi<CalibrationUpdateRequest, CalibrationUpdateResponse>(
     "/calibration/update",

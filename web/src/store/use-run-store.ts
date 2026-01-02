@@ -134,6 +134,8 @@ const defaultAdvancedParams = {
   sigmaPctVt2: 4.0,
   expectedDriftVt1: 0.3,
   expectedDriftVt2: 1.0,
+  splitRatioVt1: 1.0,
+  splitRatioVt2: 1.2,
 };
 
 const initialState: RunState = {

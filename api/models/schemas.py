@@ -147,6 +147,12 @@ class IntervalResult(BaseModel):
         description="Speed for this interval (mph)"
     )
 
+    # Observed noise for calibration
+    observed_sigma_pct: Optional[float] = Field(
+        default=None,
+        description="Observed noise as % of baseline (MADSD method)"
+    )
+
     # Chart data (for visualization)
     chart_data: ChartData = Field(description="Data for chart rendering")
 
@@ -355,6 +361,15 @@ class CalibrationParamsResponse(BaseModel):
     sigma_pct_moderate: float = Field(description="Sigma % for Moderate domain")
     sigma_pct_heavy: float = Field(description="Sigma % for Heavy domain")
     sigma_pct_severe: float = Field(description="Sigma % for Severe domain")
+    expected_drift_moderate: float = Field(description="Expected drift %/min for Moderate domain")
+    expected_drift_heavy: float = Field(description="Expected drift %/min for Heavy domain")
+    expected_drift_severe: float = Field(description="Expected drift %/min for Severe domain")
+    max_drift_moderate: float = Field(description="Max drift % threshold for Moderate domain")
+    max_drift_heavy: float = Field(description="Max drift % threshold for Heavy domain")
+    max_drift_severe: float = Field(description="Max drift % threshold for Severe domain")
+    split_ratio_moderate: float = Field(description="Split slope ratio for Moderate domain")
+    split_ratio_heavy: float = Field(description="Split slope ratio for Heavy domain")
+    split_ratio_severe: float = Field(description="Split slope ratio for Severe domain")
     enabled: bool = Field(default=True, description="Whether calibration is active")
     last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
 

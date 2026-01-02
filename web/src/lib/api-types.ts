@@ -152,6 +152,9 @@ export interface IntervalResult {
   // Speed
   speed?: number | null;
 
+  // Observed noise for calibration
+  observed_sigma_pct?: number | null;
+
   // Chart data
   chart_data: ChartData;
 
@@ -289,6 +292,15 @@ export interface CalibrationParamsResponse {
   sigma_pct_moderate: number;
   sigma_pct_heavy: number;
   sigma_pct_severe: number;
+  expected_drift_moderate: number;
+  expected_drift_heavy: number;
+  expected_drift_severe: number;
+  max_drift_moderate: number;
+  max_drift_heavy: number;
+  max_drift_severe: number;
+  split_ratio_moderate: number;
+  split_ratio_heavy: number;
+  split_ratio_severe: number;
   enabled: boolean;
   last_updated?: string | null;
 }
