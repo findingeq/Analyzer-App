@@ -34,7 +34,7 @@ export function HeaderMetrics() {
     // Round duration to nearest integer for display
     const durationDisplay = Math.round(intervalDurationMin);
 
-    if (runType === RunType.VT1_STEADY) {
+    if (runType === RunType.MODERATE) {
       // Moderate can now have intervals too
       if (numIntervals > 1) {
         return `Moderate Intervals ${numIntervals}×${durationDisplay}`;
@@ -175,7 +175,7 @@ export function HeaderMetrics() {
           )}
 
           {/* Recovery Duration (VT2/SEVERE only) */}
-          {(runType === RunType.VT2_INTERVAL || runType === RunType.SEVERE) && recoveryDurationMin > 0 && (
+          {(runType === RunType.HEAVY || runType === RunType.SEVERE) && recoveryDurationMin > 0 && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Recovery:</span>
               <span className="font-medium text-zinc-300">

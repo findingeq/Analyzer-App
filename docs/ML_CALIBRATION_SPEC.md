@@ -47,7 +47,7 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 | `HEAVY` | Heavy | Between VT1 and VT2 |
 | `SEVERE` | Severe | Above VT2 threshold |
 
-**Note**: All three domains can have intervals. Enum values to be renamed from `VT1_STEADY`/`VT2_INTERVAL`.
+**Note**: All three domains can have intervals. ✅ Enum values renamed from legacy `VT1_STEADY`/`VT2_INTERVAL`.
 
 ---
 
@@ -417,8 +417,8 @@ Response:
 
 ## Code Changes Required
 
-1. **Rename enums**: `VT1_STEADY` → `MODERATE`, `VT2_INTERVAL` → `HEAVY`
-2. **Allow intervals for all domains** (already partially done)
+1. ✅ **Rename enums**: `VT1_STEADY` → `MODERATE`, `VT2_INTERVAL` → `HEAVY` (complete)
+2. ✅ **Allow intervals for all domains** (complete)
 3. **Backend calibration service** (new) - NIG math with forgetting factor
 4. **Storage/database schema** (new)
 5. **API endpoints** (new)

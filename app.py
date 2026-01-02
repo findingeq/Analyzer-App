@@ -26,8 +26,15 @@ from io import StringIO
 # ============================================================================
 
 class RunType(Enum):
-    VT1_STEADY = "VT1 (Steady State)"
-    VT2_INTERVAL = "VT2 (Intervals)"
+    """
+    Intensity domain for training run.
+    - MODERATE: Below VT1 threshold
+    - HEAVY: Between VT1 and VT2
+    - SEVERE: Above VT2 threshold
+    """
+    MODERATE = "Moderate"
+    HEAVY = "Heavy"
+    SEVERE = "Severe"
 
 class IntervalStatus(Enum):
     BELOW_THRESHOLD = "Below Threshold"
@@ -312,7 +319,7 @@ def parse_ios_csv(uploaded_file) -> Tuple[pd.DataFrame, dict, pd.DataFrame, dict
 
                     # Parse specific run parameters
                     if key == 'run type':
-                        run_params['run_type'] = RunType.VT1_STEADY if value.lower() == 'vt1' else RunType.VT2_INTERVAL
+                        run_params['run_type'] = RunType.MODERATE if value.lower() == 'vt1' else RunType.HEAVY
                     elif key == 'speed':
                         # Speed can be single value or comma-separated for intervals
                         speeds = [float(s.strip().replace(' mph', '')) for s in value.replace(' mph', '').split(',')]
@@ -371,9 +378,9 @@ def parse_ios_csv(uploaded_file) -> Tuple[pd.DataFrame, dict, pd.DataFrame, dict
 
     # Set defaults for VT1 runs if not specified
     if 'run_type' not in run_params:
-        run_params['run_type'] = RunType.VT1_STEADY
+        run_params['run_type'] = RunType.MODERATE
 
-    if run_params['run_type'] == RunType.VT1_STEADY:
+    if run_params['run_type'] == RunType.MODERATE:
         run_params['num_intervals'] = 1
         if 'phase_duration' in run_params:
             run_params['interval_duration'] = run_params['phase_duration']
@@ -593,7 +600,7 @@ def detect_intervals(power_df: pd.DataFrame, breath_df: pd.DataFrame) -> Tuple[R
     """
     if power_df.empty or len(power_df) < 10:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     power = power_df['power'].values
     time = power_df['time'].values
@@ -602,7 +609,7 @@ def detect_intervals(power_df: pd.DataFrame, breath_df: pd.DataFrame) -> Tuple[R
     valid_mask = ~np.isnan(power) & (power >= 0)
     if np.sum(valid_mask) < 100:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # Check if this is interval training (large power range) or steady state
     valid_power = power[valid_mask]
@@ -618,7 +625,7 @@ def detect_intervals(power_df: pd.DataFrame, breath_df: pd.DataFrame) -> Tuple[R
 
     if not is_interval:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # Smooth power data with rolling median (10-second window) to reduce noise
     # Median preserves edges better than mean and is more robust to outliers
@@ -652,7 +659,7 @@ def detect_intervals(power_df: pd.DataFrame, breath_df: pd.DataFrame) -> Tuple[R
     # If no clear transitions found, treat as steady state
     if len(high_to_low_indices) < 1:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # STEP 1: Count plateaus
     # Number of high plateaus = number of high-to-low transitions (each interval ends with one)
@@ -932,9 +939,9 @@ def detect_intervals(power_df: pd.DataFrame, breath_df: pd.DataFrame) -> Tuple[R
 
     # Single interval = VT1, Multiple intervals = VT2
     if num_intervals == 1:
-        return RunType.VT1_STEADY, 1, float(interval_duration), 0.0
+        return RunType.MODERATE, 1, float(interval_duration), 0.0
     else:
-        return RunType.VT2_INTERVAL, num_intervals, float(interval_duration), float(rest_duration)
+        return RunType.HEAVY, num_intervals, float(interval_duration), float(rest_duration)
 
 
 def create_intervals_from_params(breath_df: pd.DataFrame, run_type: RunType,
@@ -944,7 +951,7 @@ def create_intervals_from_params(breath_df: pd.DataFrame, run_type: RunType,
     intervals = []
     breath_times = breath_df['breath_time'].values
     
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         # Single interval spanning entire run
         total_duration = breath_df['breath_time'].max()
         return [Interval(
@@ -1408,7 +1415,7 @@ def analyze_interval_segmented(breath_df: pd.DataFrame, interval: Interval,
     interval_duration_sec = interval.end_time - interval.start_time
     interval_duration_min = interval_duration_sec / 60.0
 
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         # VT1: Fixed blanking at 6 minutes (no hinge detection)
         phase3_onset_rel = params.vt1_blanking_time  # 360 seconds = 6 minutes
         phase3_onset_time = phase3_onset_rel + breath_times_raw[0]
@@ -1447,7 +1454,7 @@ def analyze_interval_segmented(breath_df: pd.DataFrame, interval: Interval,
     # Set calibration window based on run type and duration
     # =========================================================================
 
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         # VT1: Calibration window depends on run duration
         cal_start = phase3_onset_rel  # Start at 6 minutes
         if interval_duration_min >= 15.0:
@@ -1463,7 +1470,7 @@ def analyze_interval_segmented(breath_df: pd.DataFrame, interval: Interval,
         cal_end = phase3_onset_rel + params.vt2_calibration_duration
 
     # Determine domain-specific parameters
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         h_mult = params.h_multiplier_vt1
         expected_drift_pct = params.expected_drift_pct_vt1
         sigma_pct = params.sigma_pct_vt1
@@ -1811,7 +1818,7 @@ def analyze_interval_ceiling(breath_df: pd.DataFrame, interval: Interval,
     bin_times_min = bin_times_rel / 60.0
 
     # Get ceiling based on run type
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         ceiling_ve = params.vt1_ve_ceiling
         h_mult = params.h_multiplier_vt1
         sigma_pct = params.sigma_pct_vt1
@@ -2017,7 +2024,7 @@ def create_main_chart(breath_df: pd.DataFrame, results: List[IntervalResult],
                       intervals: List[Interval], params: AnalysisParams,
                       selected_interval: Optional[int] = None,
                       cumulative_drift: Optional[CumulativeDriftResult] = None,
-                      run_type: RunType = RunType.VT1_STEADY) -> go.Figure:
+                      run_type: RunType = RunType.MODERATE) -> go.Figure:
     """Create the main visualization chart with CUSUM overlaid on secondary Y-axis."""
 
     # Create figure with secondary y-axis
@@ -2645,7 +2652,7 @@ def main():
                     if run_params is not None:
                         # iOS format - use provided params
                         st.session_state.detected_params = {
-                            'run_type': run_params.get('run_type', RunType.VT1_STEADY),
+                            'run_type': run_params.get('run_type', RunType.MODERATE),
                             'num_intervals': run_params.get('num_intervals', 1),
                             'interval_duration': run_params.get('interval_duration', 30.0),
                             'recovery_duration': run_params.get('recovery_duration', 0.0),
@@ -2676,7 +2683,7 @@ def main():
 
         # Get detected params or use defaults
         detected = st.session_state.detected_params or {
-            'run_type': RunType.VT1_STEADY,
+            'run_type': RunType.MODERATE,
             'num_intervals': 12,
             'interval_duration': 4.0,
             'recovery_duration': 1.0
@@ -2687,7 +2694,7 @@ def main():
 
         # Run type selection
         run_type_options = ["VT1 (Steady State)", "VT2 (Intervals)"]
-        default_idx = 0 if detected['run_type'] == RunType.VT1_STEADY else 1
+        default_idx = 0 if detected['run_type'] == RunType.MODERATE else 1
         run_type_option = st.selectbox(
             "Run Type",
             options=run_type_options,
@@ -2905,9 +2912,9 @@ def main():
 
             # Determine run type
             if run_type_option == "VT1 (Steady State)":
-                run_type = RunType.VT1_STEADY
+                run_type = RunType.MODERATE
             else:
-                run_type = RunType.VT2_INTERVAL
+                run_type = RunType.HEAVY
 
             # Create intervals based on parameters
             intervals = create_intervals_from_params(
@@ -2950,7 +2957,7 @@ def main():
                 st.session_state.detected_phase3_onset = detected_phase3
 
             # Compute cumulative drift for VT2 runs
-            if run_type == RunType.VT2_INTERVAL and len(results) >= 2:
+            if run_type == RunType.HEAVY and len(results) >= 2:
                 cumulative_drift = compute_cumulative_drift(results)
             else:
                 cumulative_drift = None
@@ -3029,7 +3036,7 @@ def main():
         else:
             # ZOOMED OUT VIEW - Show Run Type (with AxB format for VT2), Cumulative Drift, Average VE
             # Format run type string
-            if run_type == RunType.VT2_INTERVAL and len(intervals) > 1:
+            if run_type == RunType.HEAVY and len(intervals) > 1:
                 # Calculate interval duration from first interval (in minutes)
                 first_interval = intervals[0]
                 interval_duration_min = int((first_interval.end_time - first_interval.start_time) / 60)

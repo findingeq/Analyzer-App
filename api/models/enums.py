@@ -6,19 +6,28 @@ from enum import Enum
 
 
 class RunType(str, Enum):
-    """Type of training run."""
-    VT1_STEADY = "VT1"
-    VT2_INTERVAL = "VT2"
+    """
+    Intensity domain for training run.
+    - MODERATE: Below VT1 threshold
+    - HEAVY: Between VT1 and VT2
+    - SEVERE: Above VT2 threshold
+    All domains can have intervals.
+    """
+    MODERATE = "MODERATE"
+    HEAVY = "HEAVY"
     SEVERE = "SEVERE"
 
     @classmethod
     def from_string(cls, value: str) -> "RunType":
-        """Convert string to RunType enum."""
+        """Convert string to RunType enum. Handles legacy values for backwards compatibility."""
         value_upper = value.upper().strip()
-        if value_upper in ("VT1", "VT1_STEADY", "VT1 (STEADY STATE)", "MODERATE"):
-            return cls.VT1_STEADY
-        elif value_upper in ("VT2", "VT2_INTERVAL", "VT2 (INTERVALS)", "HEAVY"):
-            return cls.VT2_INTERVAL
+        # MODERATE domain (legacy: VT1, VT1_STEADY)
+        if value_upper in ("MODERATE", "VT1", "VT1_STEADY", "VT1 (STEADY STATE)"):
+            return cls.MODERATE
+        # HEAVY domain (legacy: VT2, VT2_INTERVAL)
+        elif value_upper in ("HEAVY", "VT2", "VT2_INTERVAL", "VT2 (INTERVALS)"):
+            return cls.HEAVY
+        # SEVERE domain
         elif value_upper in ("SEVERE", "VT2+", "VT2_PLUS"):
             return cls.SEVERE
         raise ValueError(f"Unknown run type: {value}")

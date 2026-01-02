@@ -41,7 +41,7 @@ def detect_intervals(
     """
     if power_df.empty or len(power_df) < 10:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     power = power_df['power'].values
     time = power_df['time'].values
@@ -50,7 +50,7 @@ def detect_intervals(
     valid_mask = ~np.isnan(power) & (power >= 0)
     if np.sum(valid_mask) < 100:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # Check if this is interval training (large power range) or steady state
     valid_power = power[valid_mask]
@@ -66,7 +66,7 @@ def detect_intervals(
 
     if not is_interval:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # Smooth power data with rolling median (10-second window) to reduce noise
     window_size = min(10, len(valid_power) // 10)
@@ -94,7 +94,7 @@ def detect_intervals(
     # If no clear transitions found, treat as steady state
     if len(high_to_low_indices) < 1:
         total_duration = breath_df['breath_time'].max() / 60.0
-        return RunType.VT1_STEADY, 1, total_duration, 0.0
+        return RunType.MODERATE, 1, total_duration, 0.0
 
     # Count plateaus and measure durations
     num_high_plateaus = len(high_to_low_indices)
@@ -297,9 +297,9 @@ def detect_intervals(
 
     # Single interval = VT1, Multiple intervals = VT2
     if num_intervals == 1:
-        return RunType.VT1_STEADY, 1, float(interval_duration), 0.0
+        return RunType.MODERATE, 1, float(interval_duration), 0.0
     else:
-        return RunType.VT2_INTERVAL, num_intervals, float(interval_duration), float(rest_duration)
+        return RunType.HEAVY, num_intervals, float(interval_duration), float(rest_duration)
 
 
 def create_intervals_from_params(
@@ -325,7 +325,7 @@ def create_intervals_from_params(
     intervals = []
     breath_times = breath_df['breath_time'].values
 
-    if run_type == RunType.VT1_STEADY:
+    if run_type == RunType.MODERATE:
         # Single interval spanning entire run
         total_duration = breath_df['breath_time'].max()
         return [Interval(

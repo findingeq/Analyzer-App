@@ -121,7 +121,7 @@ def detect_intervals_endpoint(request: DetectIntervalsRequest):
             detection_method = "power_kmeans"
         else:
             # No power data, assume VT1 steady state
-            run_type = RunType.VT1_STEADY
+            run_type = RunType.MODERATE
             num_intervals = 1
             interval_duration = breath_df['breath_time'].max() / 60.0
             recovery_duration = 0.0

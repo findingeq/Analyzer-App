@@ -109,7 +109,7 @@ def run_analysis(request: AnalysisRequest):
 
         # Compute cumulative drift for multi-interval VT2/SEVERE runs
         cumulative_drift = None
-        if request.run_type in (RunType.VT2_INTERVAL, RunType.SEVERE) and len(results) >= 2:
+        if request.run_type in (RunType.HEAVY, RunType.SEVERE) and len(results) >= 2:
             cumulative_drift = compute_cumulative_drift(results)
 
         # Prepare breath data for full chart

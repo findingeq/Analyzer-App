@@ -482,8 +482,8 @@ export function Sidebar() {
                   <SelectValue placeholder="Select run type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={RunType.VT1_STEADY}>Moderate (VT1)</SelectItem>
-                  <SelectItem value={RunType.VT2_INTERVAL}>Heavy (VT2)</SelectItem>
+                  <SelectItem value={RunType.MODERATE}>Moderate (VT1)</SelectItem>
+                  <SelectItem value={RunType.HEAVY}>Heavy (VT2)</SelectItem>
                   <SelectItem value={RunType.SEVERE}>Severe (VT2+)</SelectItem>
                 </SelectContent>
               </Select>

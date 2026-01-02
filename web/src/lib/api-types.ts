@@ -8,8 +8,8 @@
 // =============================================================================
 
 export const RunType = {
-  VT1_STEADY: "VT1",
-  VT2_INTERVAL: "VT2",
+  MODERATE: "MODERATE",
+  HEAVY: "HEAVY",
   SEVERE: "SEVERE",
 } as const;
 
