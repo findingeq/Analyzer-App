@@ -175,7 +175,14 @@ Both actions reset the posterior, meaning future observations start fresh relati
 2. **VE threshold approval popup** - when cumulative change ≥ ±1 L/min
    - Shows proposed new threshold
    - User can accept or reject
-   - Rejection doesn't stop background tracking
+   - Both approval and rejection reset the Bayesian posterior (starts fresh tracking)
+
+3. **Manual threshold override** - from web app or iOS app
+   - User can directly edit VT1/VT2 threshold values at any time
+   - Change syncs to cloud immediately (bidirectional)
+   - Resets Bayesian posterior to new anchor value
+   - Future calibration observations start fresh from this baseline
+   - Endpoint: `POST /api/calibration/set-ve-threshold`
 
 ---
 
