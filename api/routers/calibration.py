@@ -112,6 +112,7 @@ def get_calibration_params(user_id: str = Query(..., description="User/device id
         sigma_pct_moderate=moderate_params['sigma_pct'],
         sigma_pct_heavy=heavy_params['sigma_pct'],
         sigma_pct_severe=severe_params['sigma_pct'],
+        enabled=state.enabled,
         last_updated=state.last_updated.isoformat() if state.last_updated else None
     )
 
@@ -282,4 +283,32 @@ def set_ve_threshold_manual(
         "success": True,
         "threshold": threshold,
         "value": state.vt1_ve.current_value if threshold == 'vt1' else state.vt2_ve.current_value
+    }
+
+
+@router.post("/toggle")
+def toggle_calibration(
+    user_id: str = Query(..., description="User/device identifier"),
+    enabled: bool = Query(..., description="Enable or disable calibration")
+):
+    """
+    Toggle calibration on or off.
+
+    When disabled:
+    - Learned data is preserved in the cloud
+    - System returns default parameters instead of calibrated values
+    - No new calibration updates occur during analysis
+
+    When re-enabled:
+    - Previously learned values are restored as the new baseline
+    - Calibration updates resume
+    """
+    state = _load_calibration_state(user_id)
+    state.enabled = enabled
+    _save_calibration_state(user_id, state)
+
+    return {
+        "success": True,
+        "enabled": enabled,
+        "message": f"Calibration {'enabled' if enabled else 'disabled'}"
     }

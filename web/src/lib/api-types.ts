@@ -278,6 +278,7 @@ export interface CalibrationState {
   severe: DomainPosterior;
   vt1_ve: VEThresholdState;
   vt2_ve: VEThresholdState;
+  enabled: boolean;
   last_updated?: string | null;
   run_counts: Record<string, number>;
 }
@@ -288,6 +289,7 @@ export interface CalibrationParamsResponse {
   sigma_pct_moderate: number;
   sigma_pct_heavy: number;
   sigma_pct_severe: number;
+  enabled: boolean;
   last_updated?: string | null;
 }
 

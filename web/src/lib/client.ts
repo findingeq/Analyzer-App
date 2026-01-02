@@ -321,3 +321,18 @@ export async function deleteSession(
     "DELETE"
   );
 }
+
+/**
+ * Toggle calibration on or off
+ * When disabled, learned data is preserved but system defaults are used
+ */
+export async function toggleCalibration(
+  enabled: boolean,
+  userId?: string
+): Promise<{ success: boolean; enabled: boolean; message: string }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, { success: boolean; enabled: boolean; message: string }>(
+    `/calibration/toggle?user_id=${encodeURIComponent(uid)}&enabled=${enabled}`,
+    "POST"
+  );
+}

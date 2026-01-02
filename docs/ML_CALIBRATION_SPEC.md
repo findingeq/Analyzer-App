@@ -168,16 +168,38 @@ Both actions reset the posterior, meaning future observations start fresh relati
 
 ## User Controls
 
-1. **Calibration exclusion checkbox** - per run in cloud run table
+1. **Calibration On/Off toggle** - on startup screen
+   - Toggle to enable/disable ML calibration globally
+   - When disabled: Learned data is preserved, system defaults are used
+   - When re-enabled: Previously learned values are restored as new baseline
+   - Persisted in cloud per user
+   - Endpoint: `POST /api/calibration/toggle`
+
+2. **VT Threshold Sidebar** - auto-populates from calibration
+   - On sidebar load, VT1/VT2 thresholds sync from cloud calibration
+   - User can manually adjust values for specific run analysis
+   - Changes are local until explicitly synced
+
+3. **Sync to Calibration button** - in VT Thresholds card
+   - Pushes current sidebar VT1/VT2 values to cloud calibration
+   - Resets Bayesian posterior to new anchor values
+   - Useful when user wants to "lock in" manual adjustments
+
+4. **Restore to Last Calibration button** - in VT Thresholds card
+   - Fetches current cloud-calibrated VT1/VT2 values
+   - Restores sidebar to cloud values (discards local changes)
+   - Does not affect the Bayesian posterior
+
+5. **Calibration exclusion checkbox** - per run in cloud run table (pending)
    - Allows user to exclude specific runs from calibration
    - Useful for unusual/outlier sessions
 
-2. **VE threshold approval popup** - when cumulative change ≥ ±1 L/min
+6. **VE threshold approval popup** - when cumulative change ≥ ±1 L/min
    - Shows proposed new threshold
    - User can accept or reject
    - Both approval and rejection reset the Bayesian posterior (starts fresh tracking)
 
-3. **Manual threshold override** - from web app or iOS app
+7. **Manual threshold override** - from web app or iOS app
    - User can directly edit VT1/VT2 threshold values at any time
    - Change syncs to cloud immediately (bidirectional)
    - Resets Bayesian posterior to new anchor value
@@ -198,6 +220,9 @@ class CalibrationState:
     # Global VE thresholds
     vt1_ve: VEThresholdState
     vt2_ve: VEThresholdState
+
+    # Calibration toggle
+    enabled: bool = True  # When False, system defaults used; learned data preserved
 
     # Metadata
     last_updated: datetime
@@ -224,17 +249,18 @@ class NIGPosterior:
 
 ---
 
-## API Endpoints (proposed)
+## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/calibration/params` | GET | Get calibrated params for iOS sync |
+| `/api/calibration/params` | GET | Get calibrated params for iOS sync (includes `enabled` flag) |
 | `/api/calibration/state` | GET | Get full user's calibration state |
 | `/api/calibration/update` | POST | Update calibration from run result |
 | `/api/calibration/reset` | POST | Reset to defaults |
 | `/api/calibration/approve-ve` | POST | User approves/rejects VE threshold change |
 | `/api/calibration/set-ve-threshold` | POST | Manual threshold override (resets anchor) |
 | `/api/calibration/blended-params` | GET | Get blended params for a run type |
+| `/api/calibration/toggle` | POST | Enable/disable calibration (preserves learned data) |
 
 ---
 
@@ -529,3 +555,6 @@ Response:
 | 2026-01-02 | Implemented frontend VE approval dialog and calibration integration |
 | 2026-01-02 | Replaced delta accumulation with Anchor & Pull Bayesian approach (κ=4) |
 | 2026-01-02 | Added iOS → cloud sync for manual threshold overrides (bidirectional sync) |
+| 2026-01-02 | Added calibration On/Off toggle with enable/disable endpoint |
+| 2026-01-02 | Added sidebar integration: VT thresholds sync from cloud calibration on load |
+| 2026-01-02 | Added "Sync to Calibration" and "Restore to Last Calibration" buttons |

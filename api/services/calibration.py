@@ -159,11 +159,14 @@ class CalibrationState:
 
     # Global VE thresholds
     vt1_ve: VEThresholdState = field(default_factory=lambda: VEThresholdState(
-        current_value=60.0, last_prompted_value=60.0
+        current_value=60.0
     ))
     vt2_ve: VEThresholdState = field(default_factory=lambda: VEThresholdState(
-        current_value=80.0, last_prompted_value=80.0
+        current_value=80.0
     ))
+
+    # Calibration enabled flag
+    enabled: bool = True
 
     # Metadata
     last_updated: Optional[datetime] = None
@@ -198,6 +201,7 @@ class CalibrationState:
             'severe': self.severe.to_dict(),
             'vt1_ve': self.vt1_ve.to_dict(),
             'vt2_ve': self.vt2_ve.to_dict(),
+            'enabled': self.enabled,
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
             'run_counts': self.run_counts
         }
@@ -215,6 +219,7 @@ class CalibrationState:
             severe=DomainPosterior.from_dict(d.get('severe', {})),
             vt1_ve=VEThresholdState.from_dict(d.get('vt1_ve', {'current_value': 60.0})),
             vt2_ve=VEThresholdState.from_dict(d.get('vt2_ve', {'current_value': 80.0})),
+            enabled=d.get('enabled', True),
             last_updated=last_updated,
             run_counts=d.get('run_counts', {'moderate': 0, 'heavy': 0, 'severe': 0})
         )
@@ -543,6 +548,11 @@ def update_calibration_from_interval(
         Tuple of (updated_state, ve_prompt) where ve_prompt is dict if
         user approval needed for VE threshold change >= 1 L/min
     """
+    # Skip calibration updates if calibration is disabled
+    # Learned data is preserved but no new updates occur
+    if not state.enabled:
+        return state, None
+
     ve_prompt = None
 
     # Check if drift calibration is eligible
@@ -632,6 +642,8 @@ def get_blended_params(
     """
     Get blended parameters for a run type, mixing calibrated with defaults.
 
+    If calibration is disabled, returns system defaults.
+
     Args:
         state: Current calibration state
         run_type: Intensity domain
@@ -639,9 +651,23 @@ def get_blended_params(
     Returns:
         Dict with blended parameter values
     """
+    defaults = DEFAULT_PARAMS[run_type.value.lower()]
+
+    # If calibration is disabled, return system defaults
+    if not state.enabled:
+        return {
+            'expected_drift_pct': defaults['expected_drift_pct'],
+            'max_drift_pct': defaults['max_drift_pct'],
+            'sigma_pct': defaults['sigma_pct'],
+            'split_ratio': defaults['split_ratio'],
+            'vt1_ve': DEFAULT_VT1_VE,
+            'vt2_ve': DEFAULT_VT2_VE,
+            'run_count': 0,
+            'calibration_enabled': False
+        }
+
     domain = state.get_domain_posterior(run_type)
     run_count = state.get_run_count(run_type)
-    defaults = DEFAULT_PARAMS[run_type.value.lower()]
 
     return {
         'expected_drift_pct': blend_with_default(
@@ -666,7 +692,8 @@ def get_blended_params(
         ),
         'vt1_ve': state.vt1_ve.current_value,
         'vt2_ve': state.vt2_ve.current_value,
-        'run_count': run_count
+        'run_count': run_count,
+        'calibration_enabled': True
     }
 
 
