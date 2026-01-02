@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # Import routers
-from .routers import files_router, analysis_router
+from .routers import files_router, analysis_router, calibration_router
+from .routers.calibration import set_firebase_bucket
 from .services.csv_parser import parse_csv_auto, detect_csv_format
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app = FastAPI(
 # Include routers
 app.include_router(files_router)
 app.include_router(analysis_router)
+app.include_router(calibration_router)
 
 # Allow requests from iOS app and local development
 app.add_middleware(
@@ -74,6 +76,9 @@ try:
             print("   Analysis endpoints will still work for local development.")
 except ImportError:
     print("⚠️  firebase-admin not installed. Cloud storage endpoints disabled.")
+
+# Set Firebase bucket reference for calibration router
+set_firebase_bucket(bucket, FIREBASE_ENABLED)
 
 
 class UploadRequest(BaseModel):
