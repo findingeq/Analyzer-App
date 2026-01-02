@@ -246,7 +246,7 @@ export async function updateCalibration(
     ve_drift_pct: r.ve_drift_pct,
     avg_ve: r.avg_ve,
     split_slope_ratio: r.split_slope_ratio,
-    sigma_pct: 5.0, // Default, would come from analysis params
+    sigma_pct: r.observed_sigma_pct ?? 5.0, // MADSD-calculated, fallback to 5%
   }));
   return fetchApi<CalibrationUpdateRequest, CalibrationUpdateResponse>(
     "/calibration/update",

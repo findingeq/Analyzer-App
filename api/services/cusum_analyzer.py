@@ -19,6 +19,81 @@ from .signal_filter import apply_hybrid_filtering
 from .regression import fit_single_slope, fit_robust_hinge, fit_second_hinge
 
 
+def calculate_madsd_sigma(ve_binned: np.ndarray) -> float:
+    """
+    Calculate sigma using MAD of Successive Differences (MADSD).
+
+    This method is robust to:
+    - Linear drift (differencing removes trends)
+    - Outliers (MAD has 50% breakdown point)
+
+    Formula:
+        diffs = ve[i+1] - ve[i]
+        sigma = MAD(diffs) * 1.4826 / sqrt(2)
+
+    The 1.4826 factor scales MAD to sigma for normal distributions.
+    The sqrt(2) accounts for variance of differences being 2x variance of original.
+
+    Args:
+        ve_binned: Array of filtered/binned VE values
+
+    Returns:
+        Estimated sigma in same units as ve_binned (L/min)
+    """
+    if len(ve_binned) < 3:
+        return 0.0
+
+    # Calculate successive differences
+    diffs = np.diff(ve_binned)
+
+    if len(diffs) == 0:
+        return 0.0
+
+    # MAD of differences
+    median_diff = np.median(diffs)
+    absolute_deviations = np.abs(diffs - median_diff)
+    mad = np.median(absolute_deviations)
+
+    # Scale to sigma estimate
+    # 1.4826 for normal distribution, /sqrt(2) for differenced data
+    sigma = mad * 1.4826 / np.sqrt(2)
+
+    return float(sigma)
+
+
+def calculate_observed_sigma_pct(
+    ve_binned: np.ndarray,
+    baseline_ve: float,
+    analysis_start_idx: int = 0
+) -> Optional[float]:
+    """
+    Calculate observed sigma as percentage of baseline using MADSD.
+
+    Args:
+        ve_binned: Array of filtered/binned VE values
+        baseline_ve: Baseline VE from calibration period (L/min)
+        analysis_start_idx: Index to start analysis (skip calibration period)
+
+    Returns:
+        Observed sigma as percentage of baseline, or None if calculation fails
+    """
+    if baseline_ve <= 0:
+        return None
+
+    # Use post-calibration data only
+    analysis_ve = ve_binned[analysis_start_idx:]
+
+    if len(analysis_ve) < 3:
+        return None
+
+    sigma_abs = calculate_madsd_sigma(analysis_ve)
+
+    # Convert to percentage of baseline
+    sigma_pct = (sigma_abs / baseline_ve) * 100.0
+
+    return float(sigma_pct)
+
+
 def _create_default_result(
     interval: Interval,
     is_ceiling_based: bool = False,
@@ -54,6 +129,7 @@ def _create_default_result(
         split_slope_ratio=None,
         hinge2_detected=False,
         speed=speed,
+        observed_sigma_pct=None,
         chart_data=ChartData(
             time_values=[interval.start_time],
             ve_binned=[0],
@@ -379,6 +455,10 @@ def analyze_interval_segmented(
 
     terminal_ve = last_60s_avg_ve
 
+    # Calculate observed sigma using MADSD on post-calibration data
+    post_cal_start_idx = np.argmax(post_cal_mask) if np.any(post_cal_mask) else 0
+    observed_sigma_pct = calculate_observed_sigma_pct(ve_binned, cal_ve_mean, post_cal_start_idx)
+
     # Extend to interval end
     if len(abs_bin_times) > 0 and abs_bin_times[-1] < interval.end_time:
         abs_bin_times = np.append(abs_bin_times, interval.end_time)
@@ -430,6 +510,7 @@ def analyze_interval_segmented(
         split_slope_ratio=split_slope_ratio,
         hinge2_detected=hinge2_detected,
         speed=speed,
+        observed_sigma_pct=observed_sigma_pct,
         chart_data=chart_data,
         breath_times=breath_times_raw.tolist(),
         ve_median=ve_median.tolist()
@@ -571,6 +652,11 @@ def analyze_interval_ceiling(
     avg_ve = np.mean(ve_binned) if len(ve_binned) > 0 else 0
     terminal_ve = last_60s_avg_ve
 
+    # Calculate observed sigma using MADSD on post-warmup data
+    warmup_mask = bin_times_rel >= params.ceiling_warmup_sec
+    warmup_start_idx = np.argmax(warmup_mask) if np.any(warmup_mask) else 0
+    observed_sigma_pct = calculate_observed_sigma_pct(ve_binned, ceiling_ve, warmup_start_idx)
+
     # Extend to interval end
     if len(abs_bin_times) > 0 and abs_bin_times[-1] < interval.end_time:
         abs_bin_times = np.append(abs_bin_times, interval.end_time)
@@ -615,6 +701,7 @@ def analyze_interval_ceiling(
         split_slope_ratio=None,
         hinge2_detected=False,
         speed=speed,
+        observed_sigma_pct=observed_sigma_pct,
         chart_data=chart_data,
         breath_times=breath_times_raw.tolist(),
         ve_median=ve_median.tolist()

@@ -147,6 +147,12 @@ class IntervalResult(BaseModel):
         description="Speed for this interval (mph)"
     )
 
+    # Observed noise for calibration
+    observed_sigma_pct: Optional[float] = Field(
+        default=None,
+        description="Observed noise as % of baseline (MADSD method)"
+    )
+
     # Chart data (for visualization)
     chart_data: ChartData = Field(description="Data for chart rendering")
 

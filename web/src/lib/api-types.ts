@@ -152,6 +152,9 @@ export interface IntervalResult {
   // Speed
   speed?: number | null;
 
+  // Observed noise for calibration
+  observed_sigma_pct?: number | null;
+
   // Chart data
   chart_data: ChartData;
 
