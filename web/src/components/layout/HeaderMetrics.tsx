@@ -27,15 +27,26 @@ export function HeaderMetrics() {
     (r) => r.interval_num === selectedIntervalId
   );
 
-  // Format run type display (e.g., "VT2 Intervals 4×10")
+  // Format run type display (e.g., "Heavy Intervals 4×10")
   const formatRunType = () => {
     if (!runType) return null;
 
+    // Round duration to nearest integer for display
+    const durationDisplay = Math.round(intervalDurationMin);
+
     if (runType === RunType.VT1_STEADY) {
-      return `VT1 Steady ${intervalDurationMin}min`;
+      // Moderate can now have intervals too
+      if (numIntervals > 1) {
+        return `Moderate Intervals ${numIntervals}×${durationDisplay}`;
+      }
+      return `Moderate ${durationDisplay}min`;
     }
 
-    return `VT2 Intervals ${numIntervals}×${intervalDurationMin}`;
+    if (runType === RunType.SEVERE) {
+      return `Severe Intervals ${numIntervals}×${durationDisplay}`;
+    }
+
+    return `Heavy Intervals ${numIntervals}×${durationDisplay}`;
   };
 
   // Calculate average VE across all intervals
@@ -140,9 +151,6 @@ export function HeaderMetrics() {
             {cumulativeDrift.slope_pct >= 0 ? "+" : ""}
             {cumulativeDrift.slope_pct.toFixed(2)}%/min
           </span>
-          <span className="text-xs text-muted-foreground">
-            (p={cumulativeDrift.pvalue.toFixed(3)})
-          </span>
         </div>
       )}
 
@@ -166,8 +174,8 @@ export function HeaderMetrics() {
             </div>
           )}
 
-          {/* Recovery Duration (VT2 only) */}
-          {runType === RunType.VT2_INTERVAL && recoveryDurationMin > 0 && (
+          {/* Recovery Duration (VT2/SEVERE only) */}
+          {(runType === RunType.VT2_INTERVAL || runType === RunType.SEVERE) && recoveryDurationMin > 0 && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Recovery:</span>
               <span className="font-medium text-zinc-300">
