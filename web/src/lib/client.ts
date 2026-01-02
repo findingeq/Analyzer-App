@@ -291,3 +291,31 @@ export async function resetCalibration(
     "POST"
   );
 }
+
+/**
+ * Manually set a VE threshold value
+ * Called when user changes threshold in the UI - syncs to calibration baseline
+ */
+export async function setVEThresholdManual(
+  threshold: "vt1" | "vt2",
+  value: number,
+  userId?: string
+): Promise<{ success: boolean; threshold: string; value: number }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, { success: boolean; threshold: string; value: number }>(
+    `/calibration/set-ve-threshold?user_id=${encodeURIComponent(uid)}&threshold=${threshold}&value=${value}`,
+    "POST"
+  );
+}
+
+/**
+ * Delete a cloud session
+ */
+export async function deleteSession(
+  sessionId: string
+): Promise<{ success: boolean; message: string }> {
+  return fetchApi<undefined, { success: boolean; message: string }>(
+    `/sessions/${encodeURIComponent(sessionId)}`,
+    "DELETE"
+  );
+}

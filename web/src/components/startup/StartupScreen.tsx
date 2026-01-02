@@ -13,7 +13,9 @@ import {
   getSession,
   parseCSV,
   detectIntervals,
+  deleteSession,
 } from "@/lib/client";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function StartupScreen() {
   const {
@@ -26,11 +28,25 @@ export function StartupScreen() {
     setDataSource,
   } = useRunStore();
 
+  const queryClient = useQueryClient();
+
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
     queryKey: ["sessions"],
     queryFn: listSessions,
     retry: false,
+  });
+
+  // Delete session mutation
+  const deleteSessionMutation = useMutation({
+    mutationFn: deleteSession,
+    onSuccess: () => {
+      // Refetch sessions after delete
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (error) => {
+      console.error("Failed to delete session:", error);
+    },
   });
 
   // Load session mutation
@@ -61,6 +77,15 @@ export function StartupScreen() {
       loadSessionMutation.mutate(sessionId);
     },
     [loadSessionMutation]
+  );
+
+  const handleDeleteSession = useCallback(
+    (sessionId: string) => {
+      if (window.confirm("Delete this session? This cannot be undone.")) {
+        deleteSessionMutation.mutate(sessionId);
+      }
+    },
+    [deleteSessionMutation]
   );
 
   // Safely get sessions array with validation
@@ -103,7 +128,8 @@ export function StartupScreen() {
           <RunListTable
             sessions={sessions}
             onSelectSession={handleSelectSession}
-            isLoading={loadSessionMutation.isPending}
+            onDeleteSession={handleDeleteSession}
+            isLoading={loadSessionMutation.isPending || deleteSessionMutation.isPending}
           />
 
           {/* Error loading session */}

@@ -31,6 +31,7 @@ import {
   listSessions,
   getSession,
   updateCalibration,
+  setVEThresholdManual,
   type SessionInfo,
 } from "@/lib/client";
 import { formatTime } from "@/lib/utils";
@@ -163,8 +164,8 @@ export function Sidebar() {
       setAnalysisResult(result);
       setIsAnalyzing(false);
 
-      // Update calibration with results (async, don't block UI)
-      if (runType && result.results?.length > 0) {
+      // Update calibration with results - ONLY for cloud runs (not local CSV uploads)
+      if (dataSource === "cloud" && runType && result.results?.length > 0) {
         try {
           const calibrationResult = await updateCalibration(runType, result.results);
           if (calibrationResult.ve_prompt) {
@@ -455,6 +456,11 @@ export function Sidebar() {
                 step="0.1"
                 value={vt1Ceiling}
                 onChange={(e) => setVt1Ceiling(parseFloat(e.target.value) || 0)}
+                onBlur={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  // Sync manual change to calibration baseline
+                  setVEThresholdManual("vt1", value).catch(() => {});
+                }}
                 className="h-8"
               />
             </div>
@@ -465,6 +471,11 @@ export function Sidebar() {
                 step="0.1"
                 value={vt2Ceiling}
                 onChange={(e) => setVt2Ceiling(parseFloat(e.target.value) || 0)}
+                onBlur={(e) => {
+                  const value = parseFloat(e.target.value) || 0;
+                  // Sync manual change to calibration baseline
+                  setVEThresholdManual("vt2", value).catch(() => {});
+                }}
                 className="h-8"
               />
             </div>

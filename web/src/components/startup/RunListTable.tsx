@@ -20,12 +20,14 @@ import {
   ArrowDown,
   Filter,
   X,
+  Trash2,
 } from "lucide-react";
 import type { SessionInfo } from "@/lib/client";
 
 interface RunListTableProps {
   sessions: SessionInfo[];
   onSelectSession: (sessionId: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   isLoading?: boolean;
 }
 
@@ -44,6 +46,7 @@ interface Filters {
 export function RunListTable({
   sessions,
   onSelectSession,
+  onDeleteSession,
   isLoading,
 }: RunListTableProps) {
   const [sortField, setSortField] = useState<SortField>("date");
@@ -377,19 +380,22 @@ export function RunListTable({
                     <SortIcon field="duration" />
                   </div>
                 </th>
+                {onDeleteSession && (
+                  <th className="py-2 px-3 w-10"></th>
+                )}
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={onDeleteSession ? 6 : 5} className="py-8 text-center text-muted-foreground">
                     Loading sessions...
                   </td>
                 </tr>
               )}
               {!isLoading && filteredSessions.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={onDeleteSession ? 6 : 5} className="py-8 text-center text-muted-foreground">
                     {hasActiveFilters
                       ? "No sessions match your filters"
                       : "No sessions found"}
@@ -424,6 +430,21 @@ export function RunListTable({
                     <td className="py-2 px-3 text-muted-foreground">
                       {formatDuration(session.summary?.duration_seconds)}
                     </td>
+                    {onDeleteSession && (
+                      <td className="py-2 px-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSession(session.session_id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
             </tbody>
