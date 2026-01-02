@@ -187,12 +187,18 @@ def approve_ve_threshold(request: VEApprovalRequest):
     Apply user's approval/rejection of VE threshold change.
 
     Called when user responds to the VE threshold prompt.
+    After approval or rejection, the anchor is reset to start fresh.
     """
     if request.threshold not in ('vt1', 'vt2'):
         raise HTTPException(status_code=400, detail="threshold must be 'vt1' or 'vt2'")
 
     state = _load_calibration_state(request.user_id)
-    state = apply_ve_threshold_approval(state, request.threshold, request.approved)
+    state = apply_ve_threshold_approval(
+        state,
+        request.threshold,
+        request.approved,
+        request.proposed_value
+    )
 
     # Save updated state
     _save_calibration_state(request.user_id, state)
@@ -253,7 +259,7 @@ def set_ve_threshold_manual(
     Manually set a VE threshold value.
 
     Called when user manually changes threshold in the UI.
-    This becomes the new baseline for calibration.
+    This becomes the new anchor for calibration, resetting the posterior.
     """
     if threshold not in ('vt1', 'vt2'):
         raise HTTPException(status_code=400, detail="threshold must be 'vt1' or 'vt2'")
@@ -262,12 +268,10 @@ def set_ve_threshold_manual(
 
     if threshold == 'vt1':
         state.vt1_ve.current_value = value
-        state.vt1_ve.last_prompted_value = value
-        state.vt1_ve.pending_delta = 0.0
+        state.vt1_ve.reset_to_anchor()  # Reset posterior to new anchor
     else:
         state.vt2_ve.current_value = value
-        state.vt2_ve.last_prompted_value = value
-        state.vt2_ve.pending_delta = 0.0
+        state.vt2_ve.reset_to_anchor()  # Reset posterior to new anchor
 
     # Enforce VT1 < VT2 constraint
     state = enforce_ordinal_constraints(state)

@@ -102,19 +102,24 @@ class DomainPosterior:
 
 @dataclass
 class VEThresholdState:
-    """State for a VE threshold (VT1 or VT2)."""
-    current_value: float = 60.0  # Current threshold value
+    """
+    State for a VE threshold (VT1 or VT2).
+
+    Uses "Anchor & Pull" Bayesian approach:
+    - current_value is the user-approved anchor
+    - posterior tracks observations, but anchored to current_value
+    - When posterior mean diverges enough from anchor, user is prompted
+    """
+    current_value: float = 60.0  # Current user-approved threshold (anchor)
     posterior: NIGPosterior = field(default_factory=NIGPosterior)
-    pending_delta: float = 0.0   # Accumulated change since last user prompt
-    last_prompted_value: float = 60.0  # Value when user was last prompted
+    anchor_kappa: float = 4.0    # Virtual sample size for anchoring (stability)
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
             'current_value': self.current_value,
             'posterior': self.posterior.to_dict(),
-            'pending_delta': self.pending_delta,
-            'last_prompted_value': self.last_prompted_value
+            'anchor_kappa': self.anchor_kappa
         }
 
     @classmethod
@@ -123,8 +128,20 @@ class VEThresholdState:
         return cls(
             current_value=d.get('current_value', 60.0),
             posterior=NIGPosterior.from_dict(d.get('posterior', {})),
-            pending_delta=d.get('pending_delta', 0.0),
-            last_prompted_value=d.get('last_prompted_value', 60.0)
+            anchor_kappa=d.get('anchor_kappa', 4.0)
+        )
+
+    def reset_to_anchor(self) -> None:
+        """
+        Reset posterior to be anchored at current_value.
+        Called after user approves a change or manually sets threshold.
+        """
+        self.posterior = NIGPosterior(
+            mu=self.current_value,
+            kappa=self.anchor_kappa,
+            alpha=2.0,
+            beta=1.0,
+            n_obs=0
         )
 
 
@@ -297,6 +314,79 @@ def update_nig_posterior(
     )
 
 
+def update_anchored_ve_posterior(
+    ve_state: VEThresholdState,
+    observation: float,
+    lambda_: float = 0.9
+) -> NIGPosterior:
+    """
+    Update VE threshold posterior using Anchor & Pull method.
+
+    The current_value acts as a strong prior (anchor) with weight anchor_kappa.
+    This prevents single observations from causing large jumps while still
+    allowing the posterior to converge toward true values over time.
+
+    Args:
+        ve_state: Current VE threshold state (contains anchor and posterior)
+        observation: New observed avg_ve value
+        lambda_: Forgetting factor for decaying old observations
+
+    Returns:
+        Updated NIG posterior
+    """
+    # Step 1: Apply forgetting factor to existing posterior
+    decayed = apply_forgetting_factor(ve_state.posterior, lambda_)
+
+    # Step 2: Blend decayed posterior with anchor
+    # The anchor always contributes anchor_kappa worth of "virtual observations"
+    # at the current_value (user-approved threshold)
+    anchor_kappa = ve_state.anchor_kappa
+    anchor_value = ve_state.current_value
+
+    # Combined prior: anchor + decayed observations
+    combined_kappa = anchor_kappa + decayed.kappa
+    combined_mu = (anchor_kappa * anchor_value + decayed.kappa * decayed.mu) / combined_kappa
+
+    # Step 3: Standard NIG update with the new observation
+    kappa_n = combined_kappa + 1
+    mu_n = (combined_kappa * combined_mu + observation) / kappa_n
+    alpha_n = decayed.alpha + 0.5
+    beta_n = decayed.beta + 0.5 * combined_kappa * (observation - combined_mu)**2 / kappa_n
+
+    return NIGPosterior(
+        mu=mu_n,
+        kappa=kappa_n - anchor_kappa,  # Store only observation-derived kappa
+        alpha=alpha_n,
+        beta=beta_n,
+        n_obs=ve_state.posterior.n_obs + 1
+    )
+
+
+def get_anchored_posterior_mean(ve_state: VEThresholdState) -> float:
+    """
+    Get the effective posterior mean considering the anchor.
+
+    This combines the anchor (current_value with anchor_kappa weight)
+    with the observation-derived posterior.
+
+    Args:
+        ve_state: Current VE threshold state
+
+    Returns:
+        Anchored posterior mean
+    """
+    anchor_kappa = ve_state.anchor_kappa
+    anchor_value = ve_state.current_value
+    obs_kappa = ve_state.posterior.kappa
+    obs_mu = ve_state.posterior.mu
+
+    if obs_kappa <= 0:
+        return anchor_value
+
+    combined_kappa = anchor_kappa + obs_kappa
+    return (anchor_kappa * anchor_value + obs_kappa * obs_mu) / combined_kappa
+
+
 def blend_with_default(
     calibrated_value: float,
     default_value: float,
@@ -424,30 +514,6 @@ def check_ve_threshold_update_needed(
     return None, False
 
 
-def calculate_ve_update_magnitude(
-    avg_ve: float,
-    threshold_ve: float,
-    base_increment: float = 0.5
-) -> float:
-    """
-    Calculate the magnitude of VE threshold update.
-
-    Greater deviation from threshold → greater incremental change.
-
-    Args:
-        avg_ve: Average VE observed
-        threshold_ve: Current threshold value
-        base_increment: Minimum update size
-
-    Returns:
-        Update magnitude (always positive)
-    """
-    deviation = abs(avg_ve - threshold_ve)
-    # Scale: 0-5 L/min deviation → base to 2x base
-    scale = 1.0 + min(deviation / 5.0, 1.0)
-    return base_increment * scale
-
-
 def update_calibration_from_interval(
     state: CalibrationState,
     run_type: RunType,
@@ -504,25 +570,21 @@ def update_calibration_from_interval(
 
     if threshold_key:
         ve_state = state.vt1_ve if threshold_key == 'vt1' else state.vt2_ve
-        threshold_ve = ve_state.current_value
 
-        magnitude = calculate_ve_update_magnitude(avg_ve, threshold_ve)
-        delta = magnitude if increase else -magnitude
+        # Update posterior using Anchor & Pull method
+        ve_state.posterior = update_anchored_ve_posterior(ve_state, avg_ve, lambda_)
 
-        # Update posterior with observation
-        ve_state.posterior = update_nig_posterior(ve_state.posterior, avg_ve, lambda_)
+        # Get anchored posterior mean (blends anchor with observations)
+        posterior_mean = get_anchored_posterior_mean(ve_state)
 
-        # Accumulate pending delta
-        ve_state.pending_delta += delta
-
-        # Check if we need to prompt user (cumulative >= 1 L/min)
-        if abs(ve_state.pending_delta) >= 1.0:
-            proposed_value = ve_state.last_prompted_value + ve_state.pending_delta
+        # Check if we need to prompt user (posterior diverged >= 1 L/min from anchor)
+        divergence = posterior_mean - ve_state.current_value
+        if abs(divergence) >= 1.0:
             ve_prompt = {
                 'threshold': threshold_key,
-                'current_value': ve_state.last_prompted_value,
-                'proposed_value': proposed_value,
-                'pending_delta': ve_state.pending_delta
+                'current_value': ve_state.current_value,
+                'proposed_value': round(posterior_mean, 1),
+                'divergence': round(divergence, 1)
             }
 
     state.last_updated = datetime.utcnow()
@@ -532,15 +594,20 @@ def update_calibration_from_interval(
 def apply_ve_threshold_approval(
     state: CalibrationState,
     threshold_key: str,
-    approved: bool
+    approved: bool,
+    proposed_value: float
 ) -> CalibrationState:
     """
     Apply user's approval/rejection of VE threshold change.
+
+    After approval or rejection, the anchor is reset to the new current_value.
+    This means future observations start fresh relative to the new baseline.
 
     Args:
         state: Current calibration state
         threshold_key: 'vt1' or 'vt2'
         approved: Whether user approved the change
+        proposed_value: The value that was proposed to the user
 
     Returns:
         Updated calibration state
@@ -548,14 +615,12 @@ def apply_ve_threshold_approval(
     ve_state = state.vt1_ve if threshold_key == 'vt1' else state.vt2_ve
 
     if approved:
-        # Apply the pending change
-        ve_state.current_value = ve_state.last_prompted_value + ve_state.pending_delta
-        ve_state.last_prompted_value = ve_state.current_value
-        ve_state.pending_delta = 0.0
-    else:
-        # Reset pending delta but keep tracking
-        ve_state.last_prompted_value = ve_state.current_value
-        ve_state.pending_delta = 0.0
+        # Apply the proposed change
+        ve_state.current_value = proposed_value
+
+    # Reset posterior to anchor at new/current value (either way)
+    # This starts fresh observation tracking from the approved baseline
+    ve_state.reset_to_anchor()
 
     return state
 

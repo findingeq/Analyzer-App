@@ -330,11 +330,10 @@ class DomainPosteriorSchema(BaseModel):
 
 
 class VEThresholdStateSchema(BaseModel):
-    """State for a VE threshold (VT1 or VT2)."""
-    current_value: float = Field(default=60.0, description="Current threshold")
+    """State for a VE threshold (VT1 or VT2) using Anchor & Pull method."""
+    current_value: float = Field(default=60.0, description="Current user-approved threshold (anchor)")
     posterior: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
-    pending_delta: float = Field(default=0.0, description="Pending change")
-    last_prompted_value: float = Field(default=60.0, description="Last prompted value")
+    anchor_kappa: float = Field(default=4.0, description="Virtual sample size for anchoring")
 
 
 class CalibrationStateSchema(BaseModel):
@@ -380,3 +379,4 @@ class VEApprovalRequest(BaseModel):
     user_id: str = Field(description="User/device identifier")
     threshold: str = Field(description="'vt1' or 'vt2'")
     approved: bool = Field(description="User's approval decision")
+    proposed_value: float = Field(description="The proposed threshold value")
