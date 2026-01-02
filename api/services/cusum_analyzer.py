@@ -168,12 +168,13 @@ def analyze_interval_segmented(
         cal_end = phase3_onset_rel + params.vt2_calibration_duration
 
     # Determine domain-specific parameters
+    # SEVERE uses same parameters as VT2
     if run_type == RunType.VT1_STEADY:
         h_mult = params.h_multiplier_vt1
         expected_drift_pct = params.expected_drift_pct_vt1
         sigma_pct = params.sigma_pct_vt1
         max_drift_threshold = params.max_drift_pct_vt1
-    else:
+    else:  # VT2_INTERVAL or SEVERE
         h_mult = params.h_multiplier_vt2
         expected_drift_pct = params.expected_drift_pct_vt2
         sigma_pct = params.sigma_pct_vt2
@@ -468,11 +469,12 @@ def analyze_interval_ceiling(
     bin_times_min = bin_times_rel / 60.0
 
     # Get ceiling
+    # SEVERE uses same parameters as VT2
     if run_type == RunType.VT1_STEADY:
         ceiling_ve = params.vt1_ve_ceiling
         h_mult = params.h_multiplier_vt1
         sigma_pct = params.sigma_pct_vt1
-    else:
+    else:  # VT2_INTERVAL or SEVERE
         ceiling_ve = params.vt2_ve_ceiling
         h_mult = params.h_multiplier_vt2
         sigma_pct = params.sigma_pct_vt2

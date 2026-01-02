@@ -10,6 +10,7 @@
 export const RunType = {
   VT1_STEADY: "VT1",
   VT2_INTERVAL: "VT2",
+  SEVERE: "SEVERE",
 } as const;
 
 export type RunType = (typeof RunType)[keyof typeof RunType];

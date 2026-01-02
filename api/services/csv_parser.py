@@ -137,7 +137,7 @@ def parse_ios_csv(csv_content: str) -> Tuple[pd.DataFrame, Dict[str, Any], pd.Da
 
                     # Parse specific run parameters
                     if key == 'run type':
-                        run_params['run_type'] = RunType.VT1_STEADY if value.lower() == 'vt1' else RunType.VT2_INTERVAL
+                        run_params['run_type'] = RunType.from_string(value)
                     elif key == 'speed':
                         # Speed can be single value or comma-separated for intervals
                         speeds = [float(s.strip().replace(' mph', '')) for s in value.replace(' mph', '').split(',')]
