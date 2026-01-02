@@ -104,14 +104,20 @@ export function Sidebar() {
     retry: false,
   });
 
-  // Populate VT thresholds from calibration when loaded (only once on mount)
+  // Populate VT thresholds and sigma from calibration when loaded (only once on mount)
   useEffect(() => {
     if (calibrationQuery.data && !calibrationLoaded) {
+      // VT thresholds
       setVt1Ceiling(calibrationQuery.data.vt1_ve);
       setVt2Ceiling(calibrationQuery.data.vt2_ve);
+      // Sigma values: VT1=Moderate, VT2=Heavy (or Severe - they should be similar)
+      setAdvancedParams({
+        sigmaPctVt1: calibrationQuery.data.sigma_pct_moderate,
+        sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
+      });
       setCalibrationLoaded(true);
     }
-  }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling]);
+  }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
 
   // Sync current values to calibration
   const handleSyncToCalibration = useCallback(async () => {
@@ -133,14 +139,20 @@ export function Sidebar() {
     setIsRestoring(true);
     try {
       const params = await getCalibrationParams();
+      // VT thresholds
       setVt1Ceiling(params.vt1_ve);
       setVt2Ceiling(params.vt2_ve);
+      // Sigma values: VT1=Moderate, VT2=Heavy
+      setAdvancedParams({
+        sigmaPctVt1: params.sigma_pct_moderate,
+        sigmaPctVt2: params.sigma_pct_heavy,
+      });
     } catch (error) {
       console.error("Failed to restore from calibration:", error);
     } finally {
       setIsRestoring(false);
     }
-  }, [setVt1Ceiling, setVt2Ceiling]);
+  }, [setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
 
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
