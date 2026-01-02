@@ -295,7 +295,15 @@ export interface CalibrationParamsResponse {
 export interface CalibrationUpdateRequest {
   user_id: string;
   run_type: RunType;
-  interval_results: IntervalResult[];
+  interval_results: Array<{
+    start_time: number;
+    end_time: number;
+    status: IntervalStatus;
+    ve_drift_pct: number;
+    avg_ve: number;
+    split_slope_ratio?: number | null;
+    sigma_pct: number;
+  }>;
 }
 
 export interface CalibrationUpdateResponse {
