@@ -68,6 +68,8 @@ interface RunState {
     sigmaPctVt2: number;
     expectedDriftVt1: number;
     expectedDriftVt2: number;
+    splitRatioVt1: number;
+    splitRatioVt2: number;
   };
 }
 
