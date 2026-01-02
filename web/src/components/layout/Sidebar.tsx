@@ -32,8 +32,10 @@ import {
   getSession,
   updateCalibration,
   setVEThresholdManual,
+  getCalibrationParams,
   type SessionInfo,
 } from "@/lib/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatTime } from "@/lib/utils";
 import {
   Upload,
@@ -45,6 +47,8 @@ import {
   ChevronDown,
   RotateCcw,
   Play,
+  RefreshCw,
+  CloudUpload,
 } from "lucide-react";
 
 export function Sidebar() {
@@ -87,6 +91,56 @@ export function Sidebar() {
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [calibrationLoaded, setCalibrationLoaded] = useState(false);
+
+  const queryClient = useQueryClient();
+
+  // Fetch calibration params (for populating VT thresholds)
+  const calibrationQuery = useQuery({
+    queryKey: ["calibration-params"],
+    queryFn: () => getCalibrationParams(),
+    retry: false,
+  });
+
+  // Populate VT thresholds from calibration when loaded (only once on mount)
+  useEffect(() => {
+    if (calibrationQuery.data && !calibrationLoaded) {
+      setVt1Ceiling(calibrationQuery.data.vt1_ve);
+      setVt2Ceiling(calibrationQuery.data.vt2_ve);
+      setCalibrationLoaded(true);
+    }
+  }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling]);
+
+  // Sync current values to calibration
+  const handleSyncToCalibration = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      await setVEThresholdManual("vt1", vt1Ceiling);
+      await setVEThresholdManual("vt2", vt2Ceiling);
+      // Invalidate calibration query to refresh
+      queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
+    } catch (error) {
+      console.error("Failed to sync to calibration:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [vt1Ceiling, vt2Ceiling, queryClient]);
+
+  // Restore from cloud calibration
+  const handleRestoreFromCalibration = useCallback(async () => {
+    setIsRestoring(true);
+    try {
+      const params = await getCalibrationParams();
+      setVt1Ceiling(params.vt1_ve);
+      setVt2Ceiling(params.vt2_ve);
+    } catch (error) {
+      console.error("Failed to restore from calibration:", error);
+    } finally {
+      setIsRestoring(false);
+    }
+  }, [setVt1Ceiling, setVt2Ceiling]);
 
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
@@ -456,11 +510,6 @@ export function Sidebar() {
                 step="0.1"
                 value={vt1Ceiling}
                 onChange={(e) => setVt1Ceiling(parseFloat(e.target.value) || 0)}
-                onBlur={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  // Sync manual change to calibration baseline
-                  setVEThresholdManual("vt1", value).catch(() => {});
-                }}
                 className="h-8"
               />
             </div>
@@ -471,11 +520,6 @@ export function Sidebar() {
                 step="0.1"
                 value={vt2Ceiling}
                 onChange={(e) => setVt2Ceiling(parseFloat(e.target.value) || 0)}
-                onBlur={(e) => {
-                  const value = parseFloat(e.target.value) || 0;
-                  // Sync manual change to calibration baseline
-                  setVEThresholdManual("vt2", value).catch(() => {});
-                }}
                 className="h-8"
               />
             </div>
@@ -486,6 +530,31 @@ export function Sidebar() {
               checked={useThresholdsForAll}
               onCheckedChange={setUseThresholdsForAll}
             />
+          </div>
+          {/* Calibration Sync Buttons */}
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-xs"
+              onClick={handleSyncToCalibration}
+              disabled={isSyncing || isRestoring}
+              title="Push current values to cloud calibration"
+            >
+              <CloudUpload className="h-3 w-3 mr-1" />
+              {isSyncing ? "Syncing..." : "Sync to Calibration"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-xs"
+              onClick={handleRestoreFromCalibration}
+              disabled={isSyncing || isRestoring}
+              title="Restore values from cloud calibration"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              {isRestoring ? "Restoring..." : "Restore"}
+            </Button>
           </div>
         </CardContent>
       </Card>

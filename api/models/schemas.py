@@ -343,6 +343,7 @@ class CalibrationStateSchema(BaseModel):
     severe: DomainPosteriorSchema = Field(default_factory=DomainPosteriorSchema)
     vt1_ve: VEThresholdStateSchema = Field(default_factory=VEThresholdStateSchema)
     vt2_ve: VEThresholdStateSchema = Field(default_factory=VEThresholdStateSchema)
+    enabled: bool = Field(default=True, description="Whether calibration is active")
     last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
     run_counts: dict = Field(default_factory=lambda: {'moderate': 0, 'heavy': 0, 'severe': 0})
 
@@ -354,6 +355,7 @@ class CalibrationParamsResponse(BaseModel):
     sigma_pct_moderate: float = Field(description="Sigma % for Moderate domain")
     sigma_pct_heavy: float = Field(description="Sigma % for Heavy domain")
     sigma_pct_severe: float = Field(description="Sigma % for Severe domain")
+    enabled: bool = Field(default=True, description="Whether calibration is active")
     last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
 
 

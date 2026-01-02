@@ -14,8 +14,12 @@ import {
   parseCSV,
   detectIntervals,
   deleteSession,
+  getCalibrationParams,
+  toggleCalibration,
 } from "@/lib/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export function StartupScreen() {
   const {
@@ -29,6 +33,24 @@ export function StartupScreen() {
   } = useRunStore();
 
   const queryClient = useQueryClient();
+
+  // Fetch calibration params
+  const calibrationQuery = useQuery({
+    queryKey: ["calibration-params"],
+    queryFn: () => getCalibrationParams(),
+    retry: false,
+  });
+
+  // Toggle calibration mutation
+  const toggleCalibrationMutation = useMutation({
+    mutationFn: (enabled: boolean) => toggleCalibration(enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
+    },
+    onError: (error) => {
+      console.error("Failed to toggle calibration:", error);
+    },
+  });
 
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
@@ -88,8 +110,16 @@ export function StartupScreen() {
     [deleteSessionMutation]
   );
 
+  const handleCalibrationToggle = useCallback(
+    (checked: boolean) => {
+      toggleCalibrationMutation.mutate(checked);
+    },
+    [toggleCalibrationMutation]
+  );
+
   // Safely get sessions array with validation
   const sessions = Array.isArray(sessionsQuery.data) ? sessionsQuery.data : [];
+  const calibrationEnabled = calibrationQuery.data?.enabled ?? true;
 
   return (
     <div className="h-full flex flex-col p-6 gap-6 overflow-auto">
@@ -101,6 +131,22 @@ export function StartupScreen() {
         <p className="text-sm text-muted-foreground">
           Select a session to analyze or upload a new CSV file
         </p>
+      </div>
+
+      {/* Calibration Toggle */}
+      <div className="flex items-center justify-center gap-3">
+        <Switch
+          id="calibration-toggle"
+          checked={calibrationEnabled}
+          onCheckedChange={handleCalibrationToggle}
+          disabled={toggleCalibrationMutation.isPending || calibrationQuery.isLoading}
+        />
+        <Label
+          htmlFor="calibration-toggle"
+          className="text-sm text-muted-foreground cursor-pointer"
+        >
+          ML Calibration {calibrationEnabled ? "On" : "Off"}
+        </Label>
       </div>
 
       {/* Loading State */}
