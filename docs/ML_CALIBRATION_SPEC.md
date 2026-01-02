@@ -419,6 +419,66 @@ Currently the app has no user authentication. Options:
 - **Anonymous ID**: Generate and persist a UUID on first launch
 - **Future**: Add proper user authentication for cross-device sync
 
+#### 7. Sync Manual Overrides to Cloud (in `workout_data_service.dart`)
+
+When the user manually changes a VT threshold in the iOS app, sync it back to the cloud so the web app and calibration system stay in sync:
+
+```dart
+/// Syncs a manual threshold change to the cloud
+/// This resets the Bayesian anchor to the new value
+Future<bool> syncThresholdToCloud(String userId, String threshold, double value) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/api/calibration/set-ve-threshold'
+          '?user_id=$userId&threshold=$threshold&value=$value'),
+    );
+    return response.statusCode == 200;
+  } catch (e) {
+    print('Error syncing threshold to cloud: $e');
+    return false;
+  }
+}
+```
+
+#### 8. Update Threshold Setters to Sync (in `app_state.dart`)
+
+Modify the existing `setVt1Ve()` and `setVt2Ve()` methods to sync to cloud:
+
+```dart
+Future<void> setVt1Ve(double value) async {
+  _vt1Ve = value;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setDouble(_vt1VeKey, value);
+  notifyListeners();
+
+  // Sync to cloud (resets Bayesian anchor)
+  final service = WorkoutDataService();
+  await service.syncThresholdToCloud(userId, 'vt1', value);
+}
+
+Future<void> setVt2Ve(double value) async {
+  _vt2Ve = value;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setDouble(_vt2VeKey, value);
+  notifyListeners();
+
+  // Sync to cloud (resets Bayesian anchor)
+  final service = WorkoutDataService();
+  await service.syncThresholdToCloud(userId, 'vt2', value);
+}
+```
+
+**Important**: When a manual override is synced to the cloud, the Bayesian posterior resets. This means future calibration observations start fresh from the new anchor value.
+
+### Bidirectional Sync Summary
+
+| Direction | Trigger | What Syncs | Posterior Reset? |
+|-----------|---------|------------|------------------|
+| Cloud → iOS | App launch | VT1, VT2, sigma×3 | No |
+| iOS → Cloud | Manual threshold change | VT1 or VT2 | Yes |
+| Web → Cloud | Analysis complete | Calibration update | Only on prompt |
+| Web → Cloud | Manual threshold change | VT1 or VT2 | Yes |
+
 ### Backend Endpoint Required
 
 Add to web app API:
@@ -461,3 +521,4 @@ Response:
 | 2026-01-02 | Implemented backend calibration service with NIG algorithm |
 | 2026-01-02 | Implemented frontend VE approval dialog and calibration integration |
 | 2026-01-02 | Replaced delta accumulation with Anchor & Pull Bayesian approach (κ=4) |
+| 2026-01-02 | Added iOS → cloud sync for manual threshold overrides (bidirectional sync) |
