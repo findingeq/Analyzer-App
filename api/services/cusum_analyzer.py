@@ -276,12 +276,21 @@ def analyze_interval_segmented(
             slope1_pct = 0.0
             slope2_pct = 0.0
 
-        if slope1_pct <= 0:
-            slope1_for_ratio = 0.001
+        # Calculate split slope ratio with reasonable bounds
+        # Use minimum of 0.1%/min for denominator to avoid division by near-zero
+        # Cap the ratio to 5.0 max (ratios > 5 are physiologically meaningless)
+        min_slope_for_ratio = 0.1  # 0.1%/min minimum
+        if abs(slope1_pct) < min_slope_for_ratio:
+            # If slope1 is near-zero, check slope2 as well
+            if abs(slope2_pct) < min_slope_for_ratio:
+                # Both slopes near-zero = ratio of 1.0 (flat throughout)
+                split_slope_ratio = 1.0
+            else:
+                # slope1 flat, slope2 not: cap at reasonable max
+                split_slope_ratio = min(5.0, abs(slope2_pct) / min_slope_for_ratio)
         else:
-            slope1_for_ratio = slope1_pct
-
-        split_slope_ratio = slope2_pct / slope1_for_ratio
+            # Normal case: slope2 / slope1, but cap at 5.0
+            split_slope_ratio = min(5.0, slope2_pct / slope1_pct)
 
         # Find actual VE value at phase3_onset from binned data (anchor point)
         # Use the closest bin to phase3_onset

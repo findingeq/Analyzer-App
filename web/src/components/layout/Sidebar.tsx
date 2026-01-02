@@ -500,11 +500,18 @@ export function Sidebar() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20].map((n) => (
-                    <SelectItem key={n} value={n.toString()}>
-                      {n} interval{n > 1 ? "s" : ""}
-                    </SelectItem>
-                  ))}
+                  {(() => {
+                    const standardOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20];
+                    // Include current value if not in standard list
+                    const options = standardOptions.includes(numIntervals)
+                      ? standardOptions
+                      : [...standardOptions, numIntervals].sort((a, b) => a - b);
+                    return options.map((n) => (
+                      <SelectItem key={n} value={n.toString()}>
+                        {n} interval{n > 1 ? "s" : ""}
+                      </SelectItem>
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
             </div>
@@ -515,24 +522,32 @@ export function Sidebar() {
                 Interval Duration (min)
               </label>
               <Select
-                value={intervalDurationMin.toString()}
+                value={Math.round(intervalDurationMin).toString()}
                 onValueChange={(v) => setIntervalDuration(parseFloat(v))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 30, 45, 60].map((n) => (
-                    <SelectItem key={n} value={n.toString()}>
-                      {n} min
-                    </SelectItem>
-                  ))}
+                  {(() => {
+                    const standardOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 30, 45, 60];
+                    const roundedDuration = Math.round(intervalDurationMin);
+                    // Include current value if not in standard list
+                    const options = standardOptions.includes(roundedDuration)
+                      ? standardOptions
+                      : [...standardOptions, roundedDuration].sort((a, b) => a - b);
+                    return options.map((n) => (
+                      <SelectItem key={n} value={n.toString()}>
+                        {n} min
+                      </SelectItem>
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Recovery Duration (for VT2/SEVERE) */}
-            {(runType === RunType.VT2_INTERVAL || runType === RunType.SEVERE) && numIntervals > 1 && (
+            {/* Recovery Duration (for interval runs) */}
+            {numIntervals > 1 && (
               <div className="space-y-2">
                 <label className="text-xs text-muted-foreground">
                   Recovery Duration (min)

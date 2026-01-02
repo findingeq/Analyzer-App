@@ -31,15 +31,22 @@ export function HeaderMetrics() {
   const formatRunType = () => {
     if (!runType) return null;
 
+    // Round duration to nearest integer for display
+    const durationDisplay = Math.round(intervalDurationMin);
+
     if (runType === RunType.VT1_STEADY) {
-      return `Moderate ${intervalDurationMin}min`;
+      // Moderate can now have intervals too
+      if (numIntervals > 1) {
+        return `Moderate Intervals ${numIntervals}×${durationDisplay}`;
+      }
+      return `Moderate ${durationDisplay}min`;
     }
 
     if (runType === RunType.SEVERE) {
-      return `Severe Intervals ${numIntervals}×${intervalDurationMin}`;
+      return `Severe Intervals ${numIntervals}×${durationDisplay}`;
     }
 
-    return `Heavy Intervals ${numIntervals}×${intervalDurationMin}`;
+    return `Heavy Intervals ${numIntervals}×${durationDisplay}`;
   };
 
   // Calculate average VE across all intervals
