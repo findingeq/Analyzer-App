@@ -105,6 +105,10 @@ class SessionSummary(BaseModel):
     recovery_duration_min: Optional[float] = None
     intensity: Optional[str] = None  # "Moderate", "Heavy", "Severe"
     avg_pace_min_per_mile: Optional[float] = None
+    # Analysis results (populated after analysis is run)
+    observed_sigma_pct: Optional[float] = None  # Observed sigma % from MADSD
+    observed_drift_pct: Optional[float] = None  # Observed drift % per minute
+    exclude_from_calibration: bool = False  # Whether to exclude from ML calibration
 
 
 class SessionInfo(BaseModel):
@@ -264,7 +268,10 @@ def list_sessions():
                     interval_duration_min=summary_data.get("interval_duration_min"),
                     recovery_duration_min=summary_data.get("recovery_duration_min"),
                     intensity=summary_data.get("intensity"),
-                    avg_pace_min_per_mile=summary_data.get("avg_pace_min_per_mile")
+                    avg_pace_min_per_mile=summary_data.get("avg_pace_min_per_mile"),
+                    observed_sigma_pct=summary_data.get("observed_sigma_pct"),
+                    observed_drift_pct=summary_data.get("observed_drift_pct"),
+                    exclude_from_calibration=summary_data.get("exclude_from_calibration", False)
                 )
 
             sessions.append(SessionInfo(
@@ -386,6 +393,94 @@ def debug_session(session_id: str):
         "total_bytes": len(csv_content),
         "metadata": metadata
     }
+
+
+class UpdateSessionAnalysisRequest(BaseModel):
+    """Request to update session with analysis results."""
+    session_id: str
+    observed_sigma_pct: Optional[float] = None
+    observed_drift_pct: Optional[float] = None
+
+
+class UpdateSessionCalibrationRequest(BaseModel):
+    """Request to update session calibration exclusion."""
+    exclude_from_calibration: bool
+
+
+@app.post("/api/sessions/{session_id}/analysis")
+def update_session_analysis(session_id: str, request: UpdateSessionAnalysisRequest):
+    """
+    Update a session's metadata with analysis results (sigma %, drift %).
+    Called after analysis is run to store observed values.
+    """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
+
+    meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
+
+    if not meta_blob.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        # Load existing metadata
+        metadata = json.loads(meta_blob.download_as_text())
+
+        # Update summary with analysis results
+        if "summary" not in metadata:
+            metadata["summary"] = {}
+
+        if request.observed_sigma_pct is not None:
+            metadata["summary"]["observed_sigma_pct"] = request.observed_sigma_pct
+        if request.observed_drift_pct is not None:
+            metadata["summary"]["observed_drift_pct"] = request.observed_drift_pct
+
+        # Save updated metadata
+        meta_blob.upload_from_string(json.dumps(metadata), content_type="application/json")
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message": "Analysis results saved"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
+
+
+@app.post("/api/sessions/{session_id}/calibration")
+def update_session_calibration(session_id: str, request: UpdateSessionCalibrationRequest):
+    """
+    Update a session's calibration exclusion status.
+    When excluded, the session won't contribute to ML calibration updates.
+    """
+    if not FIREBASE_ENABLED:
+        raise HTTPException(status_code=503, detail="Firebase storage not configured")
+
+    meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
+
+    if not meta_blob.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        # Load existing metadata
+        metadata = json.loads(meta_blob.download_as_text())
+
+        # Update summary with exclusion status
+        if "summary" not in metadata:
+            metadata["summary"] = {}
+
+        metadata["summary"]["exclude_from_calibration"] = request.exclude_from_calibration
+
+        # Save updated metadata
+        meta_blob.upload_from_string(json.dumps(metadata), content_type="application/json")
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "exclude_from_calibration": request.exclude_from_calibration,
+            "message": "Calibration exclusion updated"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update session: {str(e)}")
 
 
 # =============================================================================

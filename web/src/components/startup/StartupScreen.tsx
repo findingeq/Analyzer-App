@@ -16,7 +16,12 @@ import {
   deleteSession,
   getCalibrationParams,
   toggleCalibration,
+  runAnalysis,
+  updateCalibration,
+  updateSessionAnalysis,
+  updateSessionCalibration,
 } from "@/lib/client";
+import type { RunType } from "@/lib/api-types";
 import { useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -30,6 +35,13 @@ export function StartupScreen() {
     setIntervalDuration,
     setRecoveryDuration,
     setDataSource,
+    setAnalysisResult,
+    setIsAnalyzing,
+    setPendingVEPrompt,
+    vt1Ceiling,
+    vt2Ceiling,
+    useThresholdsForAll,
+    advancedParams,
   } = useRunStore();
 
   const queryClient = useQueryClient();
@@ -71,26 +83,96 @@ export function StartupScreen() {
     },
   });
 
-  // Load session mutation
+  // Load session mutation - loads CSV and immediately runs analysis
   const loadSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
       const session = await getSession(sessionId);
       setCSVContent(session.csv_content, sessionId);
       const metadata = await parseCSV({ csv_content: session.csv_content });
       const intervals = await detectIntervals({ csv_content: session.csv_content });
-      return { metadata, intervals };
-    },
-    onSuccess: ({ metadata, intervals }) => {
+
+      // Set metadata immediately
       setCSVMetadata(metadata);
       setRunType(intervals.run_type);
       setNumIntervals(intervals.num_intervals);
       setIntervalDuration(intervals.interval_duration_min);
       setRecoveryDuration(intervals.recovery_duration_min);
-      // Switch to cloud data source
       setDataSource("cloud");
+
+      // Automatically run analysis
+      setIsAnalyzing(true);
+      const analysisResult = await runAnalysis({
+        csv_content: session.csv_content,
+        run_type: intervals.run_type as RunType,
+        num_intervals: intervals.num_intervals,
+        interval_duration_min: intervals.interval_duration_min,
+        recovery_duration_min: intervals.recovery_duration_min,
+        params: {
+          vt1_ve_ceiling: vt1Ceiling,
+          vt2_ve_ceiling: vt2Ceiling,
+          use_thresholds_for_all: useThresholdsForAll,
+          phase3_onset_override: advancedParams.phase3OnsetOverride,
+          max_drift_pct_vt2: advancedParams.maxDriftVt2,
+          h_multiplier_vt1: advancedParams.hMultiplierVt1,
+          h_multiplier_vt2: advancedParams.hMultiplierVt2,
+          sigma_pct_vt1: advancedParams.sigmaPctVt1,
+          sigma_pct_vt2: advancedParams.sigmaPctVt2,
+          expected_drift_pct_vt1: advancedParams.expectedDriftVt1,
+          expected_drift_pct_vt2: advancedParams.expectedDriftVt2,
+        },
+      });
+
+      return { metadata, intervals, analysisResult, runType: intervals.run_type as RunType, sessionId };
+    },
+    onSuccess: async ({ analysisResult, runType, sessionId }) => {
+      setAnalysisResult(analysisResult);
+      setIsAnalyzing(false);
+
+      // Check if session is excluded from calibration
+      const sessionInfo = sessionsQuery.data?.find((s) => s.session_id === sessionId);
+      const isExcluded = sessionInfo?.summary?.exclude_from_calibration ?? false;
+
+      // Update calibration with results (only if not excluded)
+      if (runType && analysisResult.results?.length > 0 && !isExcluded) {
+        try {
+          const calibrationResult = await updateCalibration(runType, analysisResult.results);
+          if (calibrationResult.ve_prompt) {
+            setPendingVEPrompt(calibrationResult.ve_prompt);
+          }
+        } catch (error) {
+          console.warn("Calibration update failed:", error);
+        }
+      }
+
+      // Calculate average sigma and drift across intervals for session summary
+      if (analysisResult.results?.length > 0) {
+        const validSigmas = analysisResult.results
+          .map((r) => r.observed_sigma_pct)
+          .filter((v): v is number => v != null && !isNaN(v));
+        const validDrifts = analysisResult.results
+          .map((r) => r.ve_drift_pct)
+          .filter((v): v is number => v != null && !isNaN(v));
+
+        const avgSigma = validSigmas.length > 0
+          ? validSigmas.reduce((a, b) => a + b, 0) / validSigmas.length
+          : null;
+        const avgDrift = validDrifts.length > 0
+          ? validDrifts.reduce((a, b) => a + b, 0) / validDrifts.length
+          : null;
+
+        // Save analysis results to session metadata
+        try {
+          await updateSessionAnalysis(sessionId, avgSigma, avgDrift);
+          // Refresh sessions list to show updated sigma/drift
+          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        } catch (error) {
+          console.warn("Failed to save analysis results to session:", error);
+        }
+      }
     },
     onError: (error) => {
       console.error("Failed to load session:", error);
+      setIsAnalyzing(false);
     },
   });
 
@@ -115,6 +197,26 @@ export function StartupScreen() {
       toggleCalibrationMutation.mutate(checked);
     },
     [toggleCalibrationMutation]
+  );
+
+  // Toggle session calibration exclusion mutation
+  const toggleSessionCalibrationMutation = useMutation({
+    mutationFn: ({ sessionId, exclude }: { sessionId: string; exclude: boolean }) =>
+      updateSessionCalibration(sessionId, exclude),
+    onSuccess: () => {
+      // Refresh sessions to show updated calibration status
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    },
+    onError: (error) => {
+      console.error("Failed to toggle session calibration:", error);
+    },
+  });
+
+  const handleToggleSessionCalibration = useCallback(
+    (sessionId: string, exclude: boolean) => {
+      toggleSessionCalibrationMutation.mutate({ sessionId, exclude });
+    },
+    [toggleSessionCalibrationMutation]
   );
 
   // Safely get sessions array with validation
@@ -175,6 +277,7 @@ export function StartupScreen() {
             sessions={sessions}
             onSelectSession={handleSelectSession}
             onDeleteSession={handleDeleteSession}
+            onToggleCalibration={handleToggleSessionCalibration}
             isLoading={loadSessionMutation.isPending || deleteSessionMutation.isPending}
           />
 

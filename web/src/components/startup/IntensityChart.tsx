@@ -6,7 +6,6 @@
 import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRunStore } from "@/store/use-run-store";
 import type { SessionInfo } from "@/lib/client";
 
 interface IntensityChartProps {
@@ -14,7 +13,6 @@ interface IntensityChartProps {
 }
 
 export function IntensityChart({ sessions }: IntensityChartProps) {
-  const { vt1Ceiling, vt2Ceiling } = useRunStore();
 
   // Calculate time in each zone from sessions in the last 7 days
   const zoneData = useMemo(() => {
@@ -118,11 +116,8 @@ export function IntensityChart({ sessions }: IntensityChartProps) {
   return (
     <Card className="bg-card/50">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center justify-between">
-          <span>7-Day Intensity Distribution</span>
-          <span className="text-xs font-normal text-muted-foreground">
-            VT1: {vt1Ceiling} / VT2: {vt2Ceiling}
-          </span>
+        <CardTitle className="text-sm">
+          7-Day Intensity Distribution
         </CardTitle>
       </CardHeader>
       <CardContent>

@@ -21,6 +21,8 @@ import {
   Filter,
   X,
   Trash2,
+  Check,
+  XCircle,
 } from "lucide-react";
 import type { SessionInfo } from "@/lib/client";
 
@@ -28,6 +30,7 @@ interface RunListTableProps {
   sessions: SessionInfo[];
   onSelectSession: (sessionId: string) => void;
   onDeleteSession?: (sessionId: string) => void;
+  onToggleCalibration?: (sessionId: string, exclude: boolean) => void;
   isLoading?: boolean;
 }
 
@@ -47,6 +50,7 @@ export function RunListTable({
   sessions,
   onSelectSession,
   onDeleteSession,
+  onToggleCalibration,
   isLoading,
 }: RunListTableProps) {
   const [sortField, setSortField] = useState<SortField>("date");
@@ -91,21 +95,18 @@ export function RunListTable({
     return `${mins} min`;
   };
 
-  // Format type (intervals × duration)
+  // Format type - "Steady State" for VT1/Moderate, "Intervals" for VT2/Heavy/Severe
   const formatType = (session: SessionInfo) => {
     const summary = session.summary;
     if (!summary) return "-";
 
-    if (summary.run_type === "VT1") {
+    // VT1/Moderate = Steady State
+    if (summary.run_type === "VT1" || summary.run_type === "MODERATE") {
       return "Steady State";
     }
 
-    const intervals = summary.num_intervals || 1;
-    const duration = summary.interval_duration_min || 0;
-    if (intervals === 1) {
-      return `${Math.round(duration)} min`;
-    }
-    return `${intervals}×${Math.round(duration)}`;
+    // VT2/Heavy/Severe = Intervals
+    return "Intervals";
   };
 
   // Get intensity badge color
@@ -335,6 +336,11 @@ export function RunListTable({
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-card z-10">
               <tr className="border-b border-border">
+                {onToggleCalibration && (
+                  <th className="py-2 px-3 w-10 text-center font-medium text-muted-foreground" title="Include in ML Calibration">
+                    Cal
+                  </th>
+                )}
                 <th
                   className="py-2 px-3 text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                   onClick={() => handleSort("date")}
@@ -380,6 +386,12 @@ export function RunListTable({
                     <SortIcon field="duration" />
                   </div>
                 </th>
+                <th className="py-2 px-3 text-left font-medium text-muted-foreground">
+                  Sigma %
+                </th>
+                <th className="py-2 px-3 text-left font-medium text-muted-foreground">
+                  Drift %
+                </th>
                 {onDeleteSession && (
                   <th className="py-2 px-3 w-10"></th>
                 )}
@@ -388,14 +400,14 @@ export function RunListTable({
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={onDeleteSession ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={7 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
                     Loading sessions...
                   </td>
                 </tr>
               )}
               {!isLoading && filteredSessions.length === 0 && (
                 <tr>
-                  <td colSpan={onDeleteSession ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={7 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
                     {hasActiveFilters
                       ? "No sessions match your filters"
                       : "No sessions found"}
@@ -409,6 +421,36 @@ export function RunListTable({
                     onClick={() => onSelectSession(session.session_id)}
                     className="border-b border-border/50 cursor-pointer hover:bg-muted/50 transition-colors"
                   >
+                    {onToggleCalibration && (
+                      <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`h-6 w-6 p-0 ${
+                            session.summary?.exclude_from_calibration
+                              ? "text-muted-foreground hover:text-foreground"
+                              : "text-emerald-500 hover:text-emerald-400"
+                          }`}
+                          onClick={() => {
+                            onToggleCalibration(
+                              session.session_id,
+                              !session.summary?.exclude_from_calibration
+                            );
+                          }}
+                          title={
+                            session.summary?.exclude_from_calibration
+                              ? "Click to include in calibration"
+                              : "Click to exclude from calibration"
+                          }
+                        >
+                          {session.summary?.exclude_from_calibration ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            <Check className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </td>
+                    )}
                     <td className="py-2 px-3 text-primary font-medium">
                       {formatDate(session.summary?.date)}
                     </td>
@@ -429,6 +471,16 @@ export function RunListTable({
                     </td>
                     <td className="py-2 px-3 text-muted-foreground">
                       {formatDuration(session.summary?.duration_seconds)}
+                    </td>
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {session.summary?.observed_sigma_pct != null
+                        ? `${session.summary.observed_sigma_pct.toFixed(1)}%`
+                        : "-"}
+                    </td>
+                    <td className="py-2 px-3 text-muted-foreground">
+                      {session.summary?.observed_drift_pct != null
+                        ? `${session.summary.observed_drift_pct >= 0 ? "+" : ""}${session.summary.observed_drift_pct.toFixed(2)}%`
+                        : "-"}
                     </td>
                     {onDeleteSession && (
                       <td className="py-2 px-3">
