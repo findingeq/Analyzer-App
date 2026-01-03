@@ -13,7 +13,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 
 from ..models.enums import RunType, IntervalStatus
 from ..models.params import AnalysisParams
-from ..models.schemas import Interval, IntervalResult, ChartData
+from ..models.schemas import Interval, IntervalResult, ChartData, CusumTransition
 
 from .signal_filter import apply_hybrid_filtering
 from .regression import (
@@ -127,6 +127,7 @@ def _create_default_result(
         cusum_threshold=0,
         alarm_time=None,
         cusum_recovered=False,
+        cusum_transitions=[],
         is_ceiling_based=is_ceiling_based,
         is_segmented=is_segmented,
         phase3_onset_rel=None,
@@ -259,26 +260,37 @@ def analyze_interval_segmented(
     k = params.slack_multiplier * sigma_ref
     h = h_mult * sigma_ref
 
-    # CUSUM calculation
+    # CUSUM calculation with transition tracking
     cusum = np.zeros(len(bin_times_rel))
     s = 0.0
-    alarm_time = None
-    alarm_triggered = False
+    alarm_time = None  # First alarm time (for backwards compatibility)
+    in_alarm_state = False  # Current state: True = alarm active, False = recovered/normal
+    cusum_transitions = []  # List of all state transitions
+    recovered_threshold = h / 2
 
     for i in range(len(bin_times_rel)):
         if bin_times_rel[i] >= cal_end:
             residual = ve_binned[i] - ve_expected[i]
             s = max(0, s + residual - k)
 
-            if s > h and not alarm_triggered:
-                alarm_time = bin_times_rel[i] + breath_times_raw[0]
-                alarm_triggered = True
+            current_time = bin_times_rel[i] + breath_times_raw[0]
+
+            # Check for alarm trigger (CUSUM exceeds h)
+            if s > h and not in_alarm_state:
+                if alarm_time is None:
+                    alarm_time = current_time  # Record first alarm for backwards compatibility
+                cusum_transitions.append(CusumTransition(time=current_time, is_alarm=True))
+                in_alarm_state = True
+
+            # Check for recovery (CUSUM drops below h/2)
+            elif s <= recovered_threshold and in_alarm_state:
+                cusum_transitions.append(CusumTransition(time=current_time, is_alarm=False))
+                in_alarm_state = False
 
         cusum[i] = s
 
     peak_cusum = np.max(cusum)
     final_cusum = cusum[-1] if len(cusum) > 0 else 0
-    recovered_threshold = h / 2
 
     # Slope estimation
     analysis_mask = bin_times_rel >= cal_end
@@ -338,8 +350,8 @@ def analyze_interval_segmented(
         last_30s_avg_ve = last_60s_avg_ve  # Fallback to 60s if not enough data
 
     # Classification
-    cusum_alarm = peak_cusum >= h
-    cusum_recovered = cusum_alarm and (final_cusum <= recovered_threshold)
+    cusum_alarm = alarm_time is not None  # True if alarm ever triggered
+    cusum_recovered = cusum_alarm and not in_alarm_state  # Triggered but ended in recovered state
     overall_slope_pct = (slope / cal_ve_mean * 100.0) if cal_ve_mean > 0 else 0.0
     sustained_alarm = cusum_alarm and not cusum_recovered
 
@@ -450,6 +462,7 @@ def analyze_interval_segmented(
         cusum_threshold=h,
         alarm_time=alarm_time,
         cusum_recovered=cusum_recovered,
+        cusum_transitions=cusum_transitions,
         is_ceiling_based=False,
         is_segmented=True,
         phase3_onset_rel=phase3_onset_rel,
@@ -519,26 +532,37 @@ def analyze_interval_ceiling(
 
     ve_expected = np.full(len(bin_times_rel), ceiling_ve)
 
-    # CUSUM calculation
+    # CUSUM calculation with transition tracking
     cusum = np.zeros(len(bin_times_rel))
     s = 0.0
-    alarm_time = None
-    alarm_triggered = False
+    alarm_time = None  # First alarm time (for backwards compatibility)
+    in_alarm_state = False  # Current state: True = alarm active, False = recovered/normal
+    cusum_transitions = []  # List of all state transitions
+    recovered_threshold = h / 2
 
     for i in range(len(bin_times_rel)):
         if bin_times_rel[i] >= params.ceiling_warmup_sec:
             residual = ve_binned[i] - ceiling_ve
             s = max(0, s + residual - k)
 
-            if s > h and not alarm_triggered:
-                alarm_time = bin_times_rel[i] + breath_times_raw[0]
-                alarm_triggered = True
+            current_time = bin_times_rel[i] + breath_times_raw[0]
+
+            # Check for alarm trigger (CUSUM exceeds h)
+            if s > h and not in_alarm_state:
+                if alarm_time is None:
+                    alarm_time = current_time  # Record first alarm for backwards compatibility
+                cusum_transitions.append(CusumTransition(time=current_time, is_alarm=True))
+                in_alarm_state = True
+
+            # Check for recovery (CUSUM drops below h/2)
+            elif s <= recovered_threshold and in_alarm_state:
+                cusum_transitions.append(CusumTransition(time=current_time, is_alarm=False))
+                in_alarm_state = False
 
         cusum[i] = s
 
     peak_cusum = np.max(cusum)
     final_cusum = cusum[-1] if len(cusum) > 0 else 0
-    recovered_threshold = h / 2
 
     # LOESS smoothing for ceiling-based analysis (provides curved trend line)
     analysis_mask = bin_times_rel >= params.ceiling_warmup_sec
@@ -579,8 +603,8 @@ def analyze_interval_ceiling(
         last_30s_avg_ve = last_60s_avg_ve  # Fallback to 60s if not enough data
 
     # Classification
-    cusum_alarm = peak_cusum >= h
-    cusum_recovered = cusum_alarm and (final_cusum <= recovered_threshold)
+    cusum_alarm = alarm_time is not None  # True if alarm ever triggered
+    cusum_recovered = cusum_alarm and not in_alarm_state  # Triggered but ended in recovered state
 
     if not cusum_alarm or cusum_recovered:
         status = IntervalStatus.BELOW_THRESHOLD
@@ -636,6 +660,7 @@ def analyze_interval_ceiling(
         cusum_threshold=h,
         alarm_time=alarm_time,
         cusum_recovered=cusum_recovered,
+        cusum_transitions=cusum_transitions,
         is_ceiling_based=True,
         is_segmented=False,
         phase3_onset_rel=None,

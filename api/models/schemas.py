@@ -22,6 +22,12 @@ class Interval(BaseModel):
     interval_num: int = Field(description="1-indexed interval number")
 
 
+class CusumTransition(BaseModel):
+    """Represents a CUSUM state transition (alarm trigger or recovery)."""
+    time: float = Field(description="Time when transition occurred (seconds)")
+    is_alarm: bool = Field(description="True if alarm triggered, False if recovered")
+
+
 class ChartData(BaseModel):
     """Chart visualization data for an interval."""
     time_values: List[float] = Field(description="Bin timestamps (seconds)")
@@ -101,6 +107,10 @@ class IntervalResult(BaseModel):
     cusum_recovered: bool = Field(
         default=False,
         description="True if CUSUM alarm triggered but recovered"
+    )
+    cusum_transitions: List[CusumTransition] = Field(
+        default_factory=list,
+        description="List of CUSUM state transitions (alarm triggers and recoveries)"
     )
 
     # Analysis type flags

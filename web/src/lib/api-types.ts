@@ -109,6 +109,11 @@ export interface ChartData {
   slope_line_ve: number[];
 }
 
+export interface CusumTransition {
+  time: number;
+  is_alarm: boolean;
+}
+
 export interface IntervalResult {
   // Basic info
   interval_num: number;
@@ -137,6 +142,7 @@ export interface IntervalResult {
   cusum_threshold: number;
   alarm_time?: number | null;
   cusum_recovered: boolean;
+  cusum_transitions: CusumTransition[];
 
   // Analysis type flags
   is_ceiling_based: boolean;
