@@ -68,13 +68,8 @@ interface RunState {
     sigmaPctVt2: number;
     expectedDriftVt1: number;
     expectedDriftVt2: number;
-    splitRatioVt2: number;
-    // TESTING - Slope model mode for Heavy/Severe (remove after selection)
-    slopeModelMode: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
-    // TESTING - Huber delta for regression smoothness (remove after selection)
+    // Huber delta for regression robustness
     huberDelta: number;
-    // TESTING - LOESS smoothness for visual trend line (remove after selection)
-    loessFrac: number;
   };
 }
 
@@ -140,13 +135,8 @@ const defaultAdvancedParams = {
   sigmaPctVt2: 4.0,
   expectedDriftVt1: 0.3,
   expectedDriftVt2: 1.0,
-  splitRatioVt2: 1.2,
-  // TESTING - Slope model mode for Heavy/Severe (remove after selection)
-  slopeModelMode: "two_hinge" as const,
-  // TESTING - Huber delta for regression smoothness (remove after selection)
+  // Huber delta for regression robustness
   huberDelta: 5.0,
-  // TESTING - LOESS smoothness for visual trend line (remove after selection)
-  loessFrac: 0.4,
 };
 
 const initialState: RunState = {

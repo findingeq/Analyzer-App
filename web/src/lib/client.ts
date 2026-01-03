@@ -247,7 +247,6 @@ export async function updateCalibration(
     status: r.status as IntervalStatus,
     ve_drift_pct: r.ve_drift_pct,
     avg_ve: r.avg_ve,
-    split_slope_ratio: r.split_slope_ratio,
     sigma_pct: r.observed_sigma_pct ?? defaultSigmaPct, // MADSD-calculated, domain-specific fallback
   }));
   return fetchApi<CalibrationUpdateRequest, CalibrationUpdateResponse>(
@@ -350,7 +349,6 @@ export interface AdvancedParamsRequest {
   sigmaPctVt2: number;
   expectedDriftVt2: number;
   maxDriftVt2: number;
-  splitRatioVt2: number;
   hMultiplierVt2: number;
 }
 
@@ -368,7 +366,6 @@ export async function setAdvancedParams(
       sigma_pct_vt2: number;
       expected_drift_vt2: number;
       max_drift_vt2: number;
-      split_ratio_vt2: number;
       h_multiplier_vt2: number;
     },
     { success: boolean; message: string }
@@ -380,7 +377,6 @@ export async function setAdvancedParams(
     sigma_pct_vt2: params.sigmaPctVt2,
     expected_drift_vt2: params.expectedDriftVt2,
     max_drift_vt2: params.maxDriftVt2,
-    split_ratio_vt2: params.splitRatioVt2,
     h_multiplier_vt2: params.hMultiplierVt2,
   });
 }

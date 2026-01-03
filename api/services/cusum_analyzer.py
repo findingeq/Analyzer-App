@@ -130,11 +130,6 @@ def _create_default_result(
         is_ceiling_based=is_ceiling_based,
         is_segmented=is_segmented,
         phase3_onset_rel=None,
-        hinge2_time_rel=None,
-        slope1_pct=None,
-        slope2_pct=None,
-        split_slope_ratio=None,
-        hinge2_detected=False,
         speed=speed,
         observed_sigma_pct=None,
         chart_data=ChartData(
@@ -302,146 +297,26 @@ def analyze_interval_segmented(
         slope_line_times_rel = np.array([])
         slope_line_ve = np.array([])
 
-    # Second hinge detection (only for Heavy/Severe, not Moderate)
-    post_phase3_mask = bin_times_rel >= phase3_onset_rel
-    post_phase3_times = bin_times_rel[post_phase3_mask]
-    post_phase3_ve = ve_binned[post_phase3_mask]
-
-    hinge2_time_rel = None
-    slope1_pct = None
-    slope2_pct = None
-    split_slope_ratio = None
-    hinge2_detected = False
+    # Single slope line segment initialization
     segment2_times_rel = None
     segment2_ve = None
-    segment3_times_rel = None
-    segment3_ve = None
 
-    # Get slope model mode (TESTING - Remove after slope model selection)
-    slope_model_mode = params.slope_model_mode
-
-    if run_type == RunType.MODERATE:
-        # Moderate runs: single slope from Phase III onset to end (no split slope)
-        # Use the overall slope line for segment 2, no segment 3
-        if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
-            phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
-            anchor_ve = ve_binned[phase3_idx]
-
-            # Create segment 2 from phase3 onset to interval end using overall slope
-            segment2_times_rel = np.array([phase3_onset_rel, interval_end_rel])
-            # Calculate VE at these times using the overall slope fit
-            slope_line_intercept = slope_line_ve[0] - slope * (slope_line_times_rel[0] / 60.0) if len(slope_line_ve) > 0 else cal_ve_mean
-            segment2_ve = slope_line_intercept + slope * (segment2_times_rel / 60.0)
-
-            # Adjust to anchor at phase3_onset
-            ve_offset = anchor_ve - segment2_ve[0]
-            segment2_ve = segment2_ve + ve_offset
-
-            # Make segment1 end at the anchor point
-            segment1_ve[-1] = anchor_ve
-
-    # ========================================================================
-    # TESTING - Slope model modes for Heavy/Severe (Remove after selection)
-    # ========================================================================
-    elif slope_model_mode == "single_slope":
-        # Option A: Single slope from Phase III onset to end (no second hinge)
-        if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
-            phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
-            anchor_ve = ve_binned[phase3_idx]
-
-            segment2_times_rel = np.array([phase3_onset_rel, interval_end_rel])
-            slope_line_intercept = slope_line_ve[0] - slope * (slope_line_times_rel[0] / 60.0) if len(slope_line_ve) > 0 else cal_ve_mean
-            segment2_ve = slope_line_intercept + slope * (segment2_times_rel / 60.0)
-
-            ve_offset = anchor_ve - segment2_ve[0]
-            segment2_ve = segment2_ve + ve_offset
-            segment1_ve[-1] = anchor_ve
-
-            # No second hinge, no segment 3
-            hinge2_detected = False
-
-    elif slope_model_mode == "quadratic" and len(post_phase3_times) >= 4:
-        # Option C: Quadratic curve fit (smooth acceleration)
-        q_a, q_b, q_c, quad_succeeded = fit_quadratic_slope(
-            post_phase3_times, post_phase3_ve, phase3_onset_rel
-        )
-
+    # Single slope model for all run types (from Phase III onset to end)
+    if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
         phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
         anchor_ve = ve_binned[phase3_idx]
 
-        # Generate smooth quadratic curve for visualization
-        n_points = 50
-        segment2_times_rel = np.linspace(phase3_onset_rel, interval_end_rel, n_points)
-        segment2_ve_raw = q_a + q_b * segment2_times_rel + q_c * segment2_times_rel ** 2
+        # Create segment 2 from phase3 onset to interval end using overall slope
+        segment2_times_rel = np.array([phase3_onset_rel, interval_end_rel])
+        slope_line_intercept = slope_line_ve[0] - slope * (slope_line_times_rel[0] / 60.0) if len(slope_line_ve) > 0 else cal_ve_mean
+        segment2_ve = slope_line_intercept + slope * (segment2_times_rel / 60.0)
 
-        # Anchor to actual data at phase3_onset
-        ve_offset = anchor_ve - segment2_ve_raw[0]
-        segment2_ve = segment2_ve_raw + ve_offset
+        # Adjust to anchor at phase3_onset
+        ve_offset = anchor_ve - segment2_ve[0]
+        segment2_ve = segment2_ve + ve_offset
+
+        # Make segment1 end at the anchor point
         segment1_ve[-1] = anchor_ve
-
-        # No second hinge for quadratic, no segment 3
-        hinge2_detected = quad_succeeded
-
-        # Calculate equivalent slope metrics from quadratic
-        # Average slope = derivative at midpoint = b + 2*c*t_mid
-        t_mid = (phase3_onset_rel + interval_end_rel) / 2.0
-        avg_slope_per_sec = q_b + 2 * q_c * t_mid
-        avg_slope_per_min = avg_slope_per_sec * 60.0
-        if cal_ve_mean > 0:
-            slope1_pct = (avg_slope_per_min / cal_ve_mean) * 100.0
-            slope2_pct = slope1_pct  # Same for quadratic (no split)
-        split_slope_ratio = 1.0  # No split for quadratic
-
-    elif len(post_phase3_times) >= 4:
-        # Option B (default "two_hinge") or "two_hinge_constrained"
-        if slope_model_mode == "two_hinge_constrained":
-            tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge_constrained(
-                post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
-            )
-        else:
-            # Default: "two_hinge" (original behavior)
-            tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge(
-                post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
-            )
-
-        hinge2_time_rel = tau2
-
-        slope1_abs = h2_b1 * 60.0
-        slope2_abs = (h2_b1 + h2_b2) * 60.0
-
-        if cal_ve_mean > 0:
-            slope1_pct = (slope1_abs / cal_ve_mean) * 100.0
-            slope2_pct = (slope2_abs / cal_ve_mean) * 100.0
-        else:
-            slope1_pct = 0.0
-            slope2_pct = 0.0
-
-        # Calculate split slope ratio with reasonable bounds
-        min_slope_for_ratio = 0.1
-        if abs(slope1_pct) < min_slope_for_ratio:
-            if abs(slope2_pct) < min_slope_for_ratio:
-                split_slope_ratio = 1.0
-            else:
-                split_slope_ratio = min(5.0, abs(slope2_pct) / min_slope_for_ratio)
-        else:
-            split_slope_ratio = min(5.0, slope2_pct / slope1_pct)
-
-        phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
-        anchor_ve = ve_binned[phase3_idx]
-
-        model_ve_at_phase3 = h2_b0 + h2_b1 * phase3_onset_rel + h2_b2 * max(0, phase3_onset_rel - hinge2_time_rel)
-        ve_offset = anchor_ve - model_ve_at_phase3
-
-        segment2_times_rel = np.array([phase3_onset_rel, hinge2_time_rel])
-        segment2_ve = ve_offset + h2_b0 + h2_b1 * segment2_times_rel + h2_b2 * np.maximum(0, segment2_times_rel - hinge2_time_rel)
-
-        segment3_times_rel = np.array([hinge2_time_rel, interval_end_rel])
-        segment3_ve = ve_offset + h2_b0 + h2_b1 * segment3_times_rel + h2_b2 * np.maximum(0, segment3_times_rel - hinge2_time_rel)
-
-        segment1_ve[-1] = anchor_ve
-    # ========================================================================
-    # END TESTING SECTION
-    # ========================================================================
 
     # Last 60s and 30s averages
     interval_duration = bin_times_rel[-1] if len(bin_times_rel) > 0 else 0
@@ -464,44 +339,50 @@ def analyze_interval_segmented(
     cusum_alarm = peak_cusum >= h
     cusum_recovered = cusum_alarm and (final_cusum <= recovered_threshold)
     overall_slope_pct = (slope / cal_ve_mean * 100.0) if cal_ve_mean > 0 else 0.0
+    sustained_alarm = cusum_alarm and not cusum_recovered
 
     if run_type == RunType.MODERATE:
-        # Moderate domain: simplified classification using only expected_drift
-        # No max_drift or split_ratio - just expected_drift (0.3%/min default)
-        drift_threshold = expected_drift_pct
+        # Moderate domain classification (thresholds from cloud calibration)
+        # low_threshold = expected_drift_pct (0.3%/min default)
+        # high_threshold = max_drift_threshold (1.0%/min default for Moderate)
+        low_threshold = expected_drift_pct
+        high_threshold = max_drift_threshold
 
-        if not cusum_alarm or cusum_recovered:
-            if overall_slope_pct < drift_threshold:
+        if not sustained_alarm:
+            # No cusum OR cusum recovered
+            if overall_slope_pct < low_threshold:
                 status = IntervalStatus.BELOW_THRESHOLD
-            else:
+            elif overall_slope_pct < high_threshold:
                 status = IntervalStatus.BORDERLINE
+            else:
+                status = IntervalStatus.ABOVE_THRESHOLD
         else:
-            if overall_slope_pct < drift_threshold:
+            # Cusum triggered and NOT recovered
+            if overall_slope_pct < low_threshold:
                 status = IntervalStatus.BORDERLINE
             else:
                 status = IntervalStatus.ABOVE_THRESHOLD
     else:
-        # Heavy/Severe domain: simplified classification (single slope, no split ratio)
-        # ABOVE: (slope >= expected_drift AND sustained alarm) OR (slope >= max_drift)
-        # BELOW: slope < expected_drift AND (no alarm OR recovered)
-        # BORDERLINE: everything else
-        low_threshold = expected_drift_pct   # 1.0%/min default
-        high_threshold = max_drift_threshold  # 3.0%/min default
+        # Heavy/Severe domain classification (thresholds from cloud calibration)
+        # low_threshold = expected_drift_pct (1.0%/min default)
+        # high_threshold = max_drift_threshold (3.0%/min default)
+        low_threshold = expected_drift_pct
+        high_threshold = max_drift_threshold
 
-        sustained_alarm = cusum_alarm and not cusum_recovered
-
-        if overall_slope_pct >= high_threshold:
-            # Very high drift - ABOVE regardless of CUSUM
-            status = IntervalStatus.ABOVE_THRESHOLD
-        elif overall_slope_pct >= low_threshold and sustained_alarm:
-            # Moderate drift with sustained CUSUM alarm - ABOVE
-            status = IntervalStatus.ABOVE_THRESHOLD
-        elif overall_slope_pct < low_threshold and not sustained_alarm:
-            # Low drift and no sustained alarm - BELOW
-            status = IntervalStatus.BELOW_THRESHOLD
+        if not sustained_alarm:
+            # No cusum OR cusum recovered
+            if overall_slope_pct < low_threshold:
+                status = IntervalStatus.BELOW_THRESHOLD
+            elif overall_slope_pct < high_threshold:
+                status = IntervalStatus.BORDERLINE
+            else:
+                status = IntervalStatus.ABOVE_THRESHOLD
         else:
-            # Everything else - BORDERLINE
-            status = IntervalStatus.BORDERLINE
+            # Cusum triggered and NOT recovered
+            if overall_slope_pct < low_threshold:
+                status = IntervalStatus.BORDERLINE
+            else:
+                status = IntervalStatus.ABOVE_THRESHOLD
 
     # Convert to absolute times
     abs_bin_times = bin_times_rel + breath_times_raw[0]
@@ -570,11 +451,6 @@ def analyze_interval_segmented(
         is_ceiling_based=False,
         is_segmented=True,
         phase3_onset_rel=phase3_onset_rel,
-        hinge2_time_rel=hinge2_time_rel,
-        slope1_pct=slope1_pct,
-        slope2_pct=slope2_pct,
-        split_slope_ratio=split_slope_ratio,
-        hinge2_detected=hinge2_detected,
         speed=speed,
         observed_sigma_pct=observed_sigma_pct,
         chart_data=chart_data,
@@ -761,11 +637,6 @@ def analyze_interval_ceiling(
         is_ceiling_based=True,
         is_segmented=False,
         phase3_onset_rel=None,
-        hinge2_time_rel=None,
-        slope1_pct=None,
-        slope2_pct=None,
-        split_slope_ratio=None,
-        hinge2_detected=False,
         speed=speed,
         observed_sigma_pct=observed_sigma_pct,
         chart_data=chart_data,

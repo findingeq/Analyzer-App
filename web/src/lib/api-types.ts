@@ -74,14 +74,8 @@ export interface AnalysisParams {
   use_thresholds_for_all?: boolean;
   ceiling_warmup_sec?: number;
 
-  // TESTING - Slope model mode for Heavy/Severe (remove after selection)
-  slope_model_mode?: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
-
-  // TESTING - Huber delta for regression smoothness (remove after selection)
+  // Huber delta for regression robustness
   huber_delta?: number;
-
-  // TESTING - LOESS smoothness for visual trend line (remove after selection)
-  loess_frac?: number;
 }
 
 // =============================================================================
@@ -150,13 +144,6 @@ export interface IntervalResult {
 
   // Phase III detection
   phase3_onset_rel?: number | null;
-
-  // Second hinge detection
-  hinge2_time_rel?: number | null;
-  slope1_pct?: number | null;
-  slope2_pct?: number | null;
-  split_slope_ratio?: number | null;
-  hinge2_detected: boolean;
 
   // Speed
   speed?: number | null;
@@ -323,7 +310,6 @@ export interface CalibrationUpdateRequest {
     status: IntervalStatus;
     ve_drift_pct: number;
     avg_ve: number;
-    split_slope_ratio?: number | null;
     sigma_pct: number;
   }>;
 }

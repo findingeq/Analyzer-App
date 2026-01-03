@@ -101,25 +101,17 @@ class AnalysisParams(BaseModel):
         description="Hampel filter sigma threshold"
     )
 
-    # Slope model mode for Heavy/Severe intervals (TESTING - remove after selection)
-    # Options: "single_slope", "two_hinge", "two_hinge_constrained", "quadratic"
-    slope_model_mode: str = Field(
-        default="two_hinge",
-        description="Slope model for Heavy/Severe: single_slope, two_hinge, two_hinge_constrained, quadratic"
-    )
-
-    # TESTING - Huber loss delta parameter for regression smoothness
+    # Huber loss delta parameter for regression robustness
     # Lower = more robust to outliers but may underfit; Higher = more sensitive but may overfit
     huber_delta: float = Field(
         default=5.0,
         description="Huber loss delta threshold (L/min) for robust regression"
     )
 
-    # TESTING - LOESS smoothness parameter for visual trend line
-    # Lower = more wiggly (follows data closely); Higher = smoother (more averaged)
+    # LOESS smoothness parameter for visual trend line
     loess_frac: float = Field(
-        default=0.4,
-        description="LOESS smoothing fraction (0.1-0.8) for visual trend line"
+        default=0.6,
+        description="LOESS smoothing fraction for visual trend line"
     )
 
     # Ceiling-based analysis parameters

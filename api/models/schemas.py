@@ -119,27 +119,6 @@ class IntervalResult(BaseModel):
         description="Phase III onset relative to interval start (seconds)"
     )
 
-    # Second hinge detection (slope change)
-    hinge2_time_rel: Optional[float] = Field(
-        default=None,
-        description="2nd hinge time relative to interval start (seconds)"
-    )
-    slope1_pct: Optional[float] = Field(
-        default=None,
-        description="Slope before 2nd hinge (% of baseline per minute)"
-    )
-    slope2_pct: Optional[float] = Field(
-        default=None,
-        description="Slope after 2nd hinge (% of baseline per minute)"
-    )
-    split_slope_ratio: Optional[float] = Field(
-        default=None,
-        description="Ratio of slope2/slope1"
-    )
-    hinge2_detected: bool = Field(
-        default=False,
-        description="True if 2nd hinge was successfully detected"
-    )
 
     # Speed (from iOS CSV)
     speed: Optional[float] = Field(
