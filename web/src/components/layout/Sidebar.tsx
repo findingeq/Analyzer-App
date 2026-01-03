@@ -117,6 +117,7 @@ export function Sidebar() {
         sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
         expectedDriftVt1: calibrationQuery.data.expected_drift_moderate,
         expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
+        maxDriftVt1: calibrationQuery.data.max_drift_moderate,
         maxDriftVt2: calibrationQuery.data.max_drift_heavy,
       });
       setCalibrationLoaded(true);
@@ -146,6 +147,7 @@ export function Sidebar() {
         sigmaPctVt1: advancedParams.sigmaPctVt1,
         expectedDriftVt1: advancedParams.expectedDriftVt1,
         hMultiplierVt1: advancedParams.hMultiplierVt1,
+        maxDriftVt1: advancedParams.maxDriftVt1,
         sigmaPctVt2: advancedParams.sigmaPctVt2,
         expectedDriftVt2: advancedParams.expectedDriftVt2,
         maxDriftVt2: advancedParams.maxDriftVt2,
@@ -171,6 +173,7 @@ export function Sidebar() {
         sigmaPctVt2: params.sigma_pct_heavy,
         expectedDriftVt1: params.expected_drift_moderate,
         expectedDriftVt2: params.expected_drift_heavy,
+        maxDriftVt1: params.max_drift_moderate,
         maxDriftVt2: params.max_drift_heavy,
       });
     } catch (error) {
@@ -240,7 +243,7 @@ export function Sidebar() {
           vt2_ve_ceiling: vt2Ceiling,
           use_thresholds_for_all: useThresholdsForAll,
           phase3_onset_override: advancedParams.phase3OnsetOverride,
-          // Note: max_drift_pct_vt1 removed - VT1/Moderate doesn't use max_drift
+          max_drift_pct_vt1: advancedParams.maxDriftVt1,
           max_drift_pct_vt2: advancedParams.maxDriftVt2,
           h_multiplier_vt1: advancedParams.hMultiplierVt1,
           h_multiplier_vt2: advancedParams.hMultiplierVt2,
@@ -865,8 +868,22 @@ export function Sidebar() {
                 </div>
               </div>
 
-              {/* Max Drift & Split Ratio (VT2 only - VT1/Moderate doesn't use these) */}
+              {/* Max Drift (VT1 and VT2) */}
               <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Max Drift % (VT1)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={advancedParams.maxDriftVt1}
+                    onChange={(e) =>
+                      setAdvancedParams({
+                        maxDriftVt1: parseFloat(e.target.value) || 1.0,
+                      })
+                    }
+                    className="h-8"
+                  />
+                </div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Max Drift % (VT2)</label>
                   <Input

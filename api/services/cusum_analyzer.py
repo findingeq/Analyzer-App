@@ -297,9 +297,11 @@ def analyze_interval_segmented(
         slope_line_times_rel = np.array([])
         slope_line_ve = np.array([])
 
-    # Single slope line segment initialization
+    # Single slope line segment initialization (segment3 no longer used)
     segment2_times_rel = None
     segment2_ve = None
+    segment3_times_rel = None
+    segment3_ve = None
 
     # Single slope model for all run types (from Phase III onset to end)
     if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
