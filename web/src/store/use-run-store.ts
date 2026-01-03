@@ -58,9 +58,9 @@ interface RunState {
   pendingVEPrompt: CalibrationUpdateResponse["ve_prompt"] | null;
 
   // Advanced CUSUM parameters (persisted)
+  // Note: VT1/Moderate doesn't use maxDrift or splitRatio in classification
   advancedParams: {
     phase3OnsetOverride: number | null;
-    maxDriftVt1: number;
     maxDriftVt2: number;
     hMultiplierVt1: number;
     hMultiplierVt2: number;
@@ -68,7 +68,6 @@ interface RunState {
     sigmaPctVt2: number;
     expectedDriftVt1: number;
     expectedDriftVt2: number;
-    splitRatioVt1: number;
     splitRatioVt2: number;
   };
 }
@@ -128,7 +127,6 @@ interface RunActions {
 
 const defaultAdvancedParams = {
   phase3OnsetOverride: null as number | null,
-  maxDriftVt1: 1.0,
   maxDriftVt2: 3.0,
   hMultiplierVt1: 5.0,
   hMultiplierVt2: 5.0,
@@ -136,7 +134,6 @@ const defaultAdvancedParams = {
   sigmaPctVt2: 4.0,
   expectedDriftVt1: 0.3,
   expectedDriftVt2: 1.0,
-  splitRatioVt1: 1.0,
   splitRatioVt2: 1.2,
 };
 

@@ -397,3 +397,18 @@ class VEApprovalRequest(BaseModel):
     threshold: str = Field(description="'vt1' or 'vt2'")
     approved: bool = Field(description="User's approval decision")
     proposed_value: float = Field(description="The proposed threshold value")
+
+
+class AdvancedParamsRequest(BaseModel):
+    """Request to manually set advanced calibration parameters."""
+    user_id: str = Field(description="User/device identifier")
+    # VT1 (Moderate) params
+    sigma_pct_vt1: float = Field(description="Sigma % for VT1/Moderate")
+    expected_drift_vt1: float = Field(description="Expected drift %/min for VT1/Moderate")
+    h_multiplier_vt1: float = Field(description="H multiplier for VT1/Moderate")
+    # VT2 (Heavy/Severe) params
+    sigma_pct_vt2: float = Field(description="Sigma % for VT2/Heavy")
+    expected_drift_vt2: float = Field(description="Expected drift %/min for VT2/Heavy")
+    max_drift_vt2: float = Field(description="Max drift % for VT2/Heavy")
+    split_ratio_vt2: float = Field(description="Split ratio for VT2/Heavy")
+    h_multiplier_vt2: float = Field(description="H multiplier for VT2/Heavy")
