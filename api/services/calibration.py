@@ -78,15 +78,13 @@ class DomainPosterior:
     expected_drift: NIGPosterior = field(default_factory=NIGPosterior)
     max_drift: NIGPosterior = field(default_factory=NIGPosterior)
     sigma: NIGPosterior = field(default_factory=NIGPosterior)
-    split_ratio: NIGPosterior = field(default_factory=NIGPosterior)
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
             'expected_drift': self.expected_drift.to_dict(),
             'max_drift': self.max_drift.to_dict(),
-            'sigma': self.sigma.to_dict(),
-            'split_ratio': self.split_ratio.to_dict()
+            'sigma': self.sigma.to_dict()
         }
 
     @classmethod
@@ -95,8 +93,7 @@ class DomainPosterior:
         return cls(
             expected_drift=NIGPosterior.from_dict(d.get('expected_drift', {})),
             max_drift=NIGPosterior.from_dict(d.get('max_drift', {})),
-            sigma=NIGPosterior.from_dict(d.get('sigma', {})),
-            split_ratio=NIGPosterior.from_dict(d.get('split_ratio', {}))
+            sigma=NIGPosterior.from_dict(d.get('sigma', {}))
         )
 
 
@@ -234,20 +231,17 @@ DEFAULT_PARAMS = {
     'moderate': {
         'expected_drift_pct': 0.3,  # expected_drift_pct_vt1
         'max_drift_pct': 1.0,       # max_drift_pct_vt1
-        'sigma_pct': 7.0,           # sigma_pct_vt1
-        'split_ratio': 1.0
+        'sigma_pct': 7.0            # sigma_pct_vt1
     },
     'heavy': {
         'expected_drift_pct': 1.0,  # expected_drift_pct_vt2
         'max_drift_pct': 3.0,       # max_drift_pct_vt2
-        'sigma_pct': 4.0,           # sigma_pct_vt2
-        'split_ratio': 1.2
+        'sigma_pct': 4.0            # sigma_pct_vt2
     },
     'severe': {
         'expected_drift_pct': 1.0,  # uses vt2 params
         'max_drift_pct': 3.0,       # uses vt2 params
-        'sigma_pct': 4.0,           # uses vt2 params
-        'split_ratio': 1.2
+        'sigma_pct': 4.0            # uses vt2 params
     }
 }
 
@@ -520,73 +514,123 @@ def check_ve_threshold_update_needed(
     return None, False
 
 
-def update_calibration_from_interval(
+def update_calibration_from_run(
     state: CalibrationState,
     run_type: RunType,
-    interval_status: IntervalStatus,
-    interval_duration_min: float,
-    drift_pct: float,
-    sigma_pct: float,
-    avg_ve: float,
-    lambda_: float = 0.95  # Increased from 0.9 to dampen calibration changes
+    interval_results: List[dict],
+    lambda_: float = 0.95
 ) -> Tuple[CalibrationState, Optional[dict]]:
     """
-    Update calibration state from a single interval result.
+    Update calibration state from a complete run using majority-based logic.
+
+    A run only counts toward calibration if:
+    1. More than 50% of qualifying intervals (≥6 min) share the same classification
+       (either ABOVE_THRESHOLD or BELOW_THRESHOLD)
+    2. The majority classification matches domain expectations
+
+    When eligible, averaged values from majority intervals are used for calibration.
+    Each run counts as ONE calibration sample regardless of number of intervals.
 
     Args:
         state: Current calibration state
-        run_type: Intensity domain
-        interval_status: Classification result
-        interval_duration_min: Interval duration in minutes
-        drift_pct: Observed drift rate (%/min)
-        sigma_pct: Observed sigma (% of baseline)
-        avg_ve: Average VE during post-calibration period
-        lambda_: Forgetting factor
+        run_type: Intensity domain (MODERATE, HEAVY, or SEVERE)
+        interval_results: List of interval result dicts, each containing:
+            - status: IntervalStatus or string
+            - start_time, end_time: timestamps in seconds
+            - ve_drift_pct: observed drift rate
+            - sigma_pct: observed sigma
+            - avg_ve: average VE during post-calibration period
+        lambda_: Forgetting factor for Bayesian updates
 
     Returns:
         Tuple of (updated_state, ve_prompt) where ve_prompt is dict if
         user approval needed for VE threshold change >= 1 L/min
     """
     # Skip calibration updates if calibration is disabled
-    # Learned data is preserved but no new updates occur
     if not state.enabled:
         return state, None
 
+    # Step 1: Filter to intervals ≥ 6 minutes
+    qualifying_intervals = []
+    for interval in interval_results:
+        duration_min = (interval.get('end_time', 0) - interval.get('start_time', 0)) / 60.0
+        if duration_min >= 6.0:
+            # Parse status
+            status_str = interval.get('status', 'BORDERLINE')
+            if isinstance(status_str, str):
+                status = IntervalStatus(status_str)
+            else:
+                status = status_str
+            qualifying_intervals.append({
+                'status': status,
+                'drift_pct': interval.get('ve_drift_pct', 0.0),
+                'sigma_pct': interval.get('sigma_pct', 5.0),
+                'avg_ve': interval.get('avg_ve', 60.0)
+            })
+
+    # If no qualifying intervals, run doesn't count
+    if not qualifying_intervals:
+        return state, None
+
+    # Step 2: Count classifications
+    above_count = sum(1 for i in qualifying_intervals if i['status'] == IntervalStatus.ABOVE_THRESHOLD)
+    below_count = sum(1 for i in qualifying_intervals if i['status'] == IntervalStatus.BELOW_THRESHOLD)
+    total_count = len(qualifying_intervals)
+
+    # Step 3: Check for majority (> 50% of total)
+    majority_status = None
+    majority_intervals = []
+
+    if above_count > total_count / 2:
+        majority_status = IntervalStatus.ABOVE_THRESHOLD
+        majority_intervals = [i for i in qualifying_intervals if i['status'] == IntervalStatus.ABOVE_THRESHOLD]
+    elif below_count > total_count / 2:
+        majority_status = IntervalStatus.BELOW_THRESHOLD
+        majority_intervals = [i for i in qualifying_intervals if i['status'] == IntervalStatus.BELOW_THRESHOLD]
+
+    # No majority means run doesn't count for calibration
+    if majority_status is None:
+        return state, None
+
+    # Step 4: Calculate averages from majority intervals
+    avg_drift_pct = sum(i['drift_pct'] for i in majority_intervals) / len(majority_intervals)
+    avg_sigma_pct = sum(i['sigma_pct'] for i in majority_intervals) / len(majority_intervals)
+    avg_avg_ve = sum(i['avg_ve'] for i in majority_intervals) / len(majority_intervals)
+
     ve_prompt = None
 
-    # Check if drift calibration is eligible
-    if check_drift_calibration_eligible(run_type, interval_status, interval_duration_min):
+    # Step 5: Check domain eligibility and update drift/sigma calibration
+    # Moderate and Heavy expect BELOW_THRESHOLD, Severe expects ABOVE_THRESHOLD
+    domain_expects_below = run_type in (RunType.MODERATE, RunType.HEAVY)
+    domain_expects_above = run_type == RunType.SEVERE
+
+    if (domain_expects_below and majority_status == IntervalStatus.BELOW_THRESHOLD) or \
+       (domain_expects_above and majority_status == IntervalStatus.ABOVE_THRESHOLD):
+        # Eligible for drift/sigma calibration
         domain = state.get_domain_posterior(run_type)
 
-        # Update expected_drift and sigma for all eligible domains
-        domain.expected_drift = update_nig_posterior(domain.expected_drift, drift_pct, lambda_)
-        domain.sigma = update_nig_posterior(domain.sigma, sigma_pct, lambda_)
-
-        # Update split_ratio only for Heavy (not Moderate or Severe)
-        # Moderate doesn't use split_ratio in classification
-        # Severe doesn't have a max_drift ceiling to inform
-        if run_type == RunType.HEAVY:
-            if split_ratio is not None and split_ratio > 0:
-                domain.split_ratio = update_nig_posterior(domain.split_ratio, split_ratio, lambda_)
+        # Update expected_drift and sigma with averaged values
+        domain.expected_drift = update_nig_posterior(domain.expected_drift, avg_drift_pct, lambda_)
+        domain.sigma = update_nig_posterior(domain.sigma, avg_sigma_pct, lambda_)
 
         # Note: max_drift values are derived from expected_drift in enforce_ordinal_constraints
         # - moderate.max_drift = heavy.expected_drift
         # - heavy.max_drift = severe.expected_drift
 
-        # Increment qualifying run count
+        # Increment run count by 1 (not per interval)
         state.increment_run_count(run_type)
 
-    # Check if VE threshold update is needed (independent of drift eligibility)
+    # Step 6: Check VE threshold update using averaged avg_ve from majority intervals
     threshold_key, increase = check_ve_threshold_update_needed(
-        run_type, interval_status, avg_ve,
+        run_type, majority_status, avg_avg_ve,
         state.vt1_ve.current_value, state.vt2_ve.current_value
     )
 
     if threshold_key:
         ve_state = state.vt1_ve if threshold_key == 'vt1' else state.vt2_ve
 
-        # Update posterior using Anchor & Pull method
-        ve_state.posterior = update_anchored_ve_posterior(ve_state, avg_ve, lambda_)
+        # Update posterior using Anchor & Pull method with averaged avg_ve
+        ve_state.posterior = update_anchored_ve_posterior(ve_state, avg_avg_ve, lambda_)
 
         # Get anchored posterior mean (blends anchor with observations)
         posterior_mean = get_anchored_posterior_mean(ve_state)
@@ -663,7 +707,6 @@ def get_blended_params(
             'expected_drift_pct': defaults['expected_drift_pct'],
             'max_drift_pct': defaults['max_drift_pct'],
             'sigma_pct': defaults['sigma_pct'],
-            'split_ratio': defaults['split_ratio'],
             'vt1_ve': DEFAULT_VT1_VE,
             'vt2_ve': DEFAULT_VT2_VE,
             'run_count': 0,
@@ -689,11 +732,6 @@ def get_blended_params(
             defaults['sigma_pct'],
             run_count
         ),
-        'split_ratio': blend_with_default(
-            domain.split_ratio.get_point_estimate(),
-            defaults['split_ratio'],
-            run_count
-        ),
         'vt1_ve': state.vt1_ve.current_value,
         'vt2_ve': state.vt2_ve.current_value,
         'run_count': run_count,
@@ -706,7 +744,7 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     Enforce ordinal constraints: Moderate drift < Heavy drift < Severe drift.
 
     Only applies to drift parameters (expected and max).
-    Sigma and split_ratio have NO ordinal constraints.
+    Sigma has NO ordinal constraint.
 
     Args:
         state: Current calibration state
