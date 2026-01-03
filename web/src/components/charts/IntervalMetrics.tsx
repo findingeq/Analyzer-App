@@ -48,7 +48,13 @@ export function IntervalMetrics() {
     zoomEnd,
     resetZoom,
     runType,
+    advancedParams,
   } = useRunStore();
+
+  // Get expected drift threshold based on run type (from calibrated params)
+  const expectedDriftThreshold = runType === RunType.MODERATE
+    ? advancedParams.expectedDriftVt1
+    : advancedParams.expectedDriftVt2;
 
   // Split slope ratio threshold (only used for Heavy/Severe)
   const splitSlopeThreshold = 1.2;
@@ -153,13 +159,12 @@ export function IntervalMetrics() {
         const hasUnrecoveredAlarm = result.alarm_time !== null && result.alarm_time !== undefined && !result.cusum_recovered;
         const avgVeColor = hasUnrecoveredAlarm ? "text-red-400" : "text-emerald-400";
 
-        // Overall slope: color based on drift magnitude
+        // Overall slope: binary color based on expected drift threshold (calibrated)
+        // Green if below threshold, Red if at or above threshold
         const overallSlope = result.ve_drift_pct;
-        const slopeColor = overallSlope !== null && overallSlope !== undefined && overallSlope >= 1.0
-          ? "text-red-400"
-          : overallSlope !== null && overallSlope !== undefined && overallSlope >= 0.5
-            ? "text-amber-400"
-            : "text-emerald-400";
+        const slopeAboveThreshold = overallSlope !== null && overallSlope !== undefined
+          && overallSlope >= expectedDriftThreshold;
+        const slopeColor = slopeAboveThreshold ? "text-red-400" : "text-emerald-400";
 
         // Split slope ratio: Green if <= 1.2x; Red if > 1.2x
         const splitRatio = result.split_slope_ratio;
