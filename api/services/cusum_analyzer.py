@@ -194,31 +194,11 @@ def analyze_interval_segmented(
     interval_duration_sec = interval.end_time - interval.start_time
     interval_duration_min = interval_duration_sec / 60.0
 
-    # Phase III onset detection
-    if run_type == RunType.MODERATE:
-        # VT1: Use robust hinge with duration-dependent bounds
-        # For runs >= 20 min: search 90s - 15min (thermal equilibration)
-        # For runs < 20 min: search 90s - 6min
-        if interval_duration_min >= 20.0:
-            tau_min = params.vt1_phase3_min_time_long
-            tau_max = params.vt1_phase3_max_time_long
-        else:
-            tau_min = params.vt1_phase3_min_time_short
-            tau_max = params.vt1_phase3_max_time_short
-
-        tau, b0, b1, b2, _, detection_succeeded = fit_robust_hinge(
-            bin_times_rel, ve_binned, params,
-            tau_min_override=tau_min,
-            tau_max_override=tau_max,
-            tau_default_override=params.vt1_phase3_default
-        )
-        phase3_onset_rel = tau
-        phase3_onset_time = tau + breath_times_raw[0]
-    else:
-        # VT2: Use robust hinge model with default VT2 bounds
-        tau, b0, b1, b2, _, detection_succeeded = fit_robust_hinge(bin_times_rel, ve_binned, params)
-        phase3_onset_rel = tau
-        phase3_onset_time = tau + breath_times_raw[0]
+    # Phase III onset detection - all domains use same robust hinge model
+    # Same window (90s-180s) and calibration period for Moderate, Heavy, and Severe
+    tau, b0, b1, b2, _, detection_succeeded = fit_robust_hinge(bin_times_rel, ve_binned, params)
+    phase3_onset_rel = tau
+    phase3_onset_time = tau + breath_times_raw[0]
 
     # Generate segment 1 line - anchor to actual data at start
     seg1_t_start = bin_times_rel[0]
@@ -234,14 +214,9 @@ def analyze_interval_segmented(
     offset = start_ve - model_ve_at_start
     segment1_ve = np.array([start_ve, model_ve_at_end + offset])
 
-    # Set calibration window
-    if run_type == RunType.MODERATE:
-        # VT1: 1 minute calibration after Phase II ends
-        cal_start = phase3_onset_rel
-        cal_end = cal_start + params.vt1_calibration_duration
-    else:
-        cal_start = phase3_onset_rel
-        cal_end = phase3_onset_rel + params.vt2_calibration_duration
+    # Set calibration window - all domains use same 60s calibration period
+    cal_start = phase3_onset_rel
+    cal_end = phase3_onset_rel + params.vt2_calibration_duration
 
     # Determine domain-specific parameters
     # SEVERE uses same parameters as VT2

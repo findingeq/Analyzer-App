@@ -19,46 +19,18 @@ class AnalysisParams(BaseModel):
         description="Minimum time for Phase III detection for VT2 (seconds)"
     )
     phase3_max_time: float = Field(
-        default=180.0,
-        description="Maximum time for Phase III detection for VT2 (seconds)"
+        default=210.0,
+        description="Maximum time for Phase III detection (seconds)"
     )
     phase3_default: float = Field(
         default=150.0,
         description="Default Phase III onset if detection fails (seconds)"
     )
 
-    # VT1-specific parameters (moderate domain)
-    # For runs < 20 min: search 90s - 6min for Phase II end
-    vt1_phase3_min_time_short: float = Field(
-        default=90.0,
-        description="Minimum time for Phase III detection for VT1 runs < 20 min (seconds)"
-    )
-    vt1_phase3_max_time_short: float = Field(
-        default=360.0,
-        description="Maximum time for Phase III detection for VT1 runs < 20 min (seconds)"
-    )
-    # For runs >= 20 min: search 90s - 15min for Phase II end (thermal equilibration)
-    vt1_phase3_min_time_long: float = Field(
-        default=90.0,
-        description="Minimum time for Phase III detection for VT1 runs >= 20 min (seconds)"
-    )
-    vt1_phase3_max_time_long: float = Field(
-        default=900.0,
-        description="Maximum time for Phase III detection for VT1 runs >= 20 min (15 min in seconds)"
-    )
-    vt1_phase3_default: float = Field(
-        default=360.0,
-        description="Default Phase III onset for VT1 if detection fails (6 min in seconds)"
-    )
-    vt1_calibration_duration: float = Field(
-        default=60.0,
-        description="Calibration window for VT1 runs (1 minute)"
-    )
-
-    # VT2-specific parameters
+    # Calibration duration (same for all domains)
     vt2_calibration_duration: float = Field(
         default=60.0,
-        description="Calibration duration after Phase III onset for VT2 (1 minute)"
+        description="Calibration duration after Phase III onset (1 minute)"
     )
 
     # Legacy calibration (fallback)
