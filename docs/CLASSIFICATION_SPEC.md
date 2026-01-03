@@ -52,18 +52,13 @@ Where:
 - `β₁` = Slope of Phase II (initial ramp)
 - `β₁ + β₂` = Slope of Phase III (drift)
 
-**Detection constraints by domain**:
+**Detection constraints** (same for all domains):
 
-| Domain | Run Duration | τ Min | τ Max | τ Default |
-|--------|--------------|-------|-------|-----------|
-| Moderate | < 20 min | 90 sec | 6 min (360s) | 6 min |
-| Moderate | ≥ 20 min | 90 sec | 15 min (900s) | 6 min |
-| Heavy/Severe | Any | 90 sec | 3 min (180s) | 2.5 min |
-
-**Rationale for Moderate duration-dependent bounds**:
-- Longer runs (≥20 min) allow more time for thermal equilibration
-- Body temperature rise can delay true steady-state onset
-- Wider search window accommodates individual variability
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| τ Min | 90 sec | Minimum allowed Phase III onset |
+| τ Max | 180 sec (3 min) | Maximum allowed Phase III onset |
+| τ Default | 150 sec (2.5 min) | Fallback if detection fails |
 
 **Detection failure conditions**:
 - τ converges to constraint boundary (within 1 second)
@@ -74,10 +69,9 @@ Where:
 
 **Purpose**: Establish baseline VE for drift calculation
 
-| Run Type | Calibration Start | Calibration Duration |
-|----------|-------------------|---------------------|
-| Moderate | Phase III onset | 60 seconds |
-| Heavy/Severe | Phase III onset | 60 seconds |
+**Same for all domains**:
+- **Start**: Phase III onset
+- **Duration**: 60 seconds
 
 **Outputs**:
 - `cal_ve_mean`: Mean VE during calibration (baseline)
@@ -390,4 +384,4 @@ A recovered CUSUM indicates:
 | Date | Changes |
 |------|---------|
 | 2026-01-02 | Initial specification |
-| 2026-01-02 | Moderate domain updates: hinge model for Phase III detection with duration-dependent bounds (90s-6min for <20min runs, 90s-15min for ≥20min runs); removed max_drift and split_ratio from classification; simplified to single expected_drift threshold; 1-minute calibration for all runs |
+| 2026-01-03 | Moderate domain uses same Phase III detection as Heavy/Severe (90s-180s window, 60s calibration); removed max_drift and split_ratio from classification; simplified to single expected_drift threshold |
