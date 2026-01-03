@@ -262,6 +262,19 @@ export const useRunStore = create<RunState & RunActions>()(
         advancedParams: state.advancedParams,
         sidebarCollapsed: state.sidebarCollapsed,
       }),
+      // Merge persisted state with defaults to handle new fields
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<RunState>;
+        return {
+          ...currentState,
+          ...persisted,
+          // Deep merge advancedParams to preserve new default fields
+          advancedParams: {
+            ...defaultAdvancedParams,
+            ...(persisted.advancedParams || {}),
+          },
+        };
+      },
     }
   )
 );
