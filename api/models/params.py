@@ -89,7 +89,7 @@ class AnalysisParams(BaseModel):
         description="Rolling median filter window size (breaths)"
     )
     bin_size: float = Field(
-        default=4.0,
+        default=5.0,
         description="Time bin size (seconds)"
     )
     hampel_window_sec: float = Field(
