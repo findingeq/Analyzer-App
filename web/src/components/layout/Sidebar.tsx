@@ -256,6 +256,8 @@ export function Sidebar() {
           slope_model_mode: advancedParams.slopeModelMode,
           // TESTING - Huber delta (remove after selection)
           huber_delta: advancedParams.huberDelta,
+          // TESTING - LOESS smoothness (remove after selection)
+          loess_frac: advancedParams.loessFrac,
         },
       });
       return result;
@@ -958,6 +960,35 @@ export function Sidebar() {
                 </Select>
                 <p className="text-[10px] text-muted-foreground/70">
                   Lower = more robust to outliers; Higher = more sensitive to data
+                </p>
+              </div>
+
+              {/* TESTING - LOESS Smoothness for visual trend line (Remove after selection) */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  LOESS Smoothness - TESTING
+                </label>
+                <Select
+                  value={advancedParams.loessFrac.toString()}
+                  onValueChange={(v) =>
+                    setAdvancedParams({
+                      loessFrac: parseFloat(v),
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0.2">0.2 (more wiggly)</SelectItem>
+                    <SelectItem value="0.3">0.3</SelectItem>
+                    <SelectItem value="0.4">0.4 (default)</SelectItem>
+                    <SelectItem value="0.5">0.5</SelectItem>
+                    <SelectItem value="0.6">0.6 (smoother)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground/70">
+                  Controls visual trend line smoothness
                 </p>
               </div>
 

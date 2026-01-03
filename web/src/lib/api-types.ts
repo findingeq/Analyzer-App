@@ -79,6 +79,9 @@ export interface AnalysisParams {
 
   // TESTING - Huber delta for regression smoothness (remove after selection)
   huber_delta?: number;
+
+  // TESTING - LOESS smoothness for visual trend line (remove after selection)
+  loess_frac?: number;
 }
 
 // =============================================================================

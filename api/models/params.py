@@ -115,6 +115,13 @@ class AnalysisParams(BaseModel):
         description="Huber loss delta threshold (L/min) for robust regression"
     )
 
+    # TESTING - LOESS smoothness parameter for visual trend line
+    # Lower = more wiggly (follows data closely); Higher = smoother (more averaged)
+    loess_frac: float = Field(
+        default=0.4,
+        description="LOESS smoothing fraction (0.1-0.8) for visual trend line"
+    )
+
     # Ceiling-based analysis parameters
     vt1_ve_ceiling: float = Field(
         default=100.0,
