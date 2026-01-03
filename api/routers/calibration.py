@@ -14,6 +14,7 @@ from ..models.schemas import (
     CalibrationUpdateRequest,
     CalibrationUpdateResponse,
     VEApprovalRequest,
+    AdvancedParamsRequest,
 )
 from ..models.enums import RunType, IntervalStatus
 from ..services.calibration import (
@@ -320,4 +321,44 @@ def toggle_calibration(
         "success": True,
         "enabled": enabled,
         "message": f"Calibration {'enabled' if enabled else 'disabled'}"
+    }
+
+
+@router.post("/set-advanced-params")
+def set_advanced_params(request: AdvancedParamsRequest):
+    """
+    Manually set advanced calibration parameters.
+
+    Called when user manually changes advanced params in the UI.
+    This directly sets the NIG posterior mu values for each domain.
+    """
+    state = _load_calibration_state(request.user_id)
+
+    # Update Moderate domain (VT1)
+    state.moderate.expected_drift.mu = request.expected_drift_vt1
+    state.moderate.sigma.mu = request.sigma_pct_vt1
+
+    # Update Heavy domain (VT2)
+    state.heavy.expected_drift.mu = request.expected_drift_vt2
+    state.heavy.max_drift.mu = request.max_drift_vt2
+    state.heavy.sigma.mu = request.sigma_pct_vt2
+    state.heavy.split_ratio.mu = request.split_ratio_vt2
+
+    # Update Severe domain (uses same values as Heavy for VT2)
+    state.severe.expected_drift.mu = request.expected_drift_vt2
+    state.severe.max_drift.mu = request.max_drift_vt2
+    state.severe.sigma.mu = request.sigma_pct_vt2
+    state.severe.split_ratio.mu = request.split_ratio_vt2
+
+    # Note: H multipliers are not stored in calibration state
+    # They are passed directly in AnalysisParams from the frontend
+
+    # Enforce ordinal constraints
+    state = enforce_ordinal_constraints(state)
+
+    _save_calibration_state(request.user_id, state)
+
+    return {
+        "success": True,
+        "message": "Advanced parameters updated"
     }

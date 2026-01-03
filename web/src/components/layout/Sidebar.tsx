@@ -33,6 +33,7 @@ import {
   updateCalibration,
   setVEThresholdManual,
   getCalibrationParams,
+  setAdvancedParams,
   type SessionInfo,
 } from "@/lib/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -111,22 +112,21 @@ export function Sidebar() {
       setVt1Ceiling(calibrationQuery.data.vt1_ve);
       setVt2Ceiling(calibrationQuery.data.vt2_ve);
       // Advanced params: VT1=Moderate domain, VT2=Heavy domain
+      // Note: VT1/Moderate doesn't use maxDrift or splitRatio
       setAdvancedParams({
         sigmaPctVt1: calibrationQuery.data.sigma_pct_moderate,
         sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
         expectedDriftVt1: calibrationQuery.data.expected_drift_moderate,
         expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
-        maxDriftVt1: calibrationQuery.data.max_drift_moderate,
         maxDriftVt2: calibrationQuery.data.max_drift_heavy,
-        splitRatioVt1: calibrationQuery.data.split_ratio_moderate,
         splitRatioVt2: calibrationQuery.data.split_ratio_heavy,
       });
       setCalibrationLoaded(true);
     }
   }, [calibrationQuery.data, calibrationLoaded, setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
 
-  // Sync current values to calibration
-  const handleSyncToCalibration = useCallback(async () => {
+  // Save VE thresholds to cloud
+  const handleSaveVEThresholds = useCallback(async () => {
     setIsSyncing(true);
     try {
       await setVEThresholdManual("vt1", vt1Ceiling);
@@ -134,37 +134,55 @@ export function Sidebar() {
       // Invalidate calibration query to refresh
       queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
     } catch (error) {
-      console.error("Failed to sync to calibration:", error);
+      console.error("Failed to save VE thresholds:", error);
     } finally {
       setIsSyncing(false);
     }
   }, [vt1Ceiling, vt2Ceiling, queryClient]);
 
-  // Restore from cloud calibration
-  const handleRestoreFromCalibration = useCallback(async () => {
+  // Sync advanced params to cloud calibration
+  const handleSyncAdvancedParams = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      await setAdvancedParams({
+        sigmaPctVt1: advancedParams.sigmaPctVt1,
+        expectedDriftVt1: advancedParams.expectedDriftVt1,
+        hMultiplierVt1: advancedParams.hMultiplierVt1,
+        sigmaPctVt2: advancedParams.sigmaPctVt2,
+        expectedDriftVt2: advancedParams.expectedDriftVt2,
+        maxDriftVt2: advancedParams.maxDriftVt2,
+        splitRatioVt2: advancedParams.splitRatioVt2,
+        hMultiplierVt2: advancedParams.hMultiplierVt2,
+      });
+      // Invalidate calibration query to refresh
+      queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
+    } catch (error) {
+      console.error("Failed to sync advanced params:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [advancedParams, queryClient]);
+
+  // Restore advanced params from cloud calibration
+  const handleRestoreAdvancedParams = useCallback(async () => {
     setIsRestoring(true);
     try {
       const params = await getCalibrationParams();
-      // VT thresholds
-      setVt1Ceiling(params.vt1_ve);
-      setVt2Ceiling(params.vt2_ve);
-      // Advanced params: VT1=Moderate domain, VT2=Heavy domain
+      // Only restore advanced params (not VT1/VT2 VE)
       setAdvancedParams({
         sigmaPctVt1: params.sigma_pct_moderate,
         sigmaPctVt2: params.sigma_pct_heavy,
         expectedDriftVt1: params.expected_drift_moderate,
         expectedDriftVt2: params.expected_drift_heavy,
-        maxDriftVt1: params.max_drift_moderate,
         maxDriftVt2: params.max_drift_heavy,
-        splitRatioVt1: params.split_ratio_moderate,
         splitRatioVt2: params.split_ratio_heavy,
       });
     } catch (error) {
-      console.error("Failed to restore from calibration:", error);
+      console.error("Failed to restore advanced params:", error);
     } finally {
       setIsRestoring(false);
     }
-  }, [setVt1Ceiling, setVt2Ceiling, setAdvancedParams]);
+  }, [setAdvancedParams]);
 
   // Fetch cloud sessions
   const sessionsQuery = useQuery({
@@ -226,7 +244,7 @@ export function Sidebar() {
           vt2_ve_ceiling: vt2Ceiling,
           use_thresholds_for_all: useThresholdsForAll,
           phase3_onset_override: advancedParams.phase3OnsetOverride,
-          max_drift_pct_vt1: advancedParams.maxDriftVt1,
+          // Note: max_drift_pct_vt1 removed - VT1/Moderate doesn't use max_drift
           max_drift_pct_vt2: advancedParams.maxDriftVt2,
           h_multiplier_vt1: advancedParams.hMultiplierVt1,
           h_multiplier_vt2: advancedParams.hMultiplierVt2,
@@ -555,29 +573,18 @@ export function Sidebar() {
               onCheckedChange={setUseThresholdsForAll}
             />
           </div>
-          {/* Calibration Sync Buttons */}
-          <div className="flex gap-2 pt-2">
+          {/* Save VE Thresholds to Cloud */}
+          <div className="pt-2">
             <Button
               variant="outline"
               size="sm"
-              className="flex-1 text-xs"
-              onClick={handleSyncToCalibration}
-              disabled={isSyncing || isRestoring}
-              title="Push current values to cloud calibration"
+              className="w-full text-xs"
+              onClick={handleSaveVEThresholds}
+              disabled={isSyncing}
+              title="Save VE thresholds to cloud"
             >
               <CloudUpload className="h-3 w-3 mr-1" />
-              {isSyncing ? "Syncing..." : "Sync to Calibration"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 text-xs"
-              onClick={handleRestoreFromCalibration}
-              disabled={isSyncing || isRestoring}
-              title="Restore values from cloud calibration"
-            >
-              <RefreshCw className="h-3 w-3 mr-1" />
-              {isRestoring ? "Restoring..." : "Restore"}
+              {isSyncing ? "Saving..." : "Save to Cloud"}
             </Button>
           </div>
         </CardContent>
@@ -861,22 +868,9 @@ export function Sidebar() {
                 </div>
               </div>
 
-              {/* Max Drift Thresholds */}
+              {/* Max Drift Threshold (VT2 only - VT1/Moderate doesn't use max_drift) */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Max Drift % (VT1)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={advancedParams.maxDriftVt1}
-                    onChange={(e) =>
-                      setAdvancedParams({
-                        maxDriftVt1: parseFloat(e.target.value) || 1.0,
-                      })
-                    }
-                    className="h-8"
-                  />
-                </div>
+                <div></div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Max Drift % (VT2)</label>
                   <Input
@@ -893,22 +887,9 @@ export function Sidebar() {
                 </div>
               </div>
 
-              {/* Split Ratio */}
+              {/* Split Ratio (VT2 only - VT1/Moderate doesn't use split_ratio) */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Split Ratio (VT1)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={advancedParams.splitRatioVt1}
-                    onChange={(e) =>
-                      setAdvancedParams({
-                        splitRatioVt1: parseFloat(e.target.value) || 1.0,
-                      })
-                    }
-                    className="h-8"
-                  />
-                </div>
+                <div></div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Split Ratio (VT2)</label>
                   <Input
@@ -923,6 +904,32 @@ export function Sidebar() {
                     className="h-8"
                   />
                 </div>
+              </div>
+
+              {/* Sync/Restore Buttons for Advanced Params */}
+              <div className="flex gap-2 pt-2 border-t">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={handleSyncAdvancedParams}
+                  disabled={isSyncing || isRestoring}
+                  title="Sync advanced params to cloud"
+                >
+                  <CloudUpload className="h-3 w-3 mr-1" />
+                  {isSyncing ? "Syncing..." : "Sync to Cloud"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-xs"
+                  onClick={handleRestoreAdvancedParams}
+                  disabled={isSyncing || isRestoring}
+                  title="Restore advanced params from cloud"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  {isRestoring ? "Restoring..." : "Restore"}
+                </Button>
               </div>
             </CardContent>
           </CollapsibleContent>

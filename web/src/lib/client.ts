@@ -338,3 +338,49 @@ export async function toggleCalibration(
     "POST"
   );
 }
+
+/**
+ * Manually set advanced calibration parameters
+ * Called when user syncs advanced params to cloud
+ */
+export interface AdvancedParamsRequest {
+  sigmaPctVt1: number;
+  expectedDriftVt1: number;
+  hMultiplierVt1: number;
+  sigmaPctVt2: number;
+  expectedDriftVt2: number;
+  maxDriftVt2: number;
+  splitRatioVt2: number;
+  hMultiplierVt2: number;
+}
+
+export async function setAdvancedParams(
+  params: AdvancedParamsRequest,
+  userId?: string
+): Promise<{ success: boolean; message: string }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<
+    {
+      user_id: string;
+      sigma_pct_vt1: number;
+      expected_drift_vt1: number;
+      h_multiplier_vt1: number;
+      sigma_pct_vt2: number;
+      expected_drift_vt2: number;
+      max_drift_vt2: number;
+      split_ratio_vt2: number;
+      h_multiplier_vt2: number;
+    },
+    { success: boolean; message: string }
+  >(`/calibration/set-advanced-params`, "POST", {
+    user_id: uid,
+    sigma_pct_vt1: params.sigmaPctVt1,
+    expected_drift_vt1: params.expectedDriftVt1,
+    h_multiplier_vt1: params.hMultiplierVt1,
+    sigma_pct_vt2: params.sigmaPctVt2,
+    expected_drift_vt2: params.expectedDriftVt2,
+    max_drift_vt2: params.maxDriftVt2,
+    split_ratio_vt2: params.splitRatioVt2,
+    h_multiplier_vt2: params.hMultiplierVt2,
+  });
+}
