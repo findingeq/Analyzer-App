@@ -56,8 +56,8 @@ export function IntervalMetrics() {
     ? advancedParams.expectedDriftVt1
     : advancedParams.expectedDriftVt2;
 
-  // Split slope ratio threshold (only used for Heavy/Severe)
-  const splitSlopeThreshold = 1.2;
+  // Split slope ratio threshold from calibrated params (only used for Heavy/Severe)
+  const splitSlopeThreshold = advancedParams.splitRatioVt2;
 
   // Moderate runs don't show split slope metrics
   const showSplitSlope = runType !== RunType.MODERATE;
