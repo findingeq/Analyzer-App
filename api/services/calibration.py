@@ -259,7 +259,7 @@ DEFAULT_VT2_VE = 80.0
 # NIG Bayesian Update Functions
 # ============================================================================
 
-def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NIGPosterior:
+def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.95) -> NIGPosterior:
     """
     Apply forgetting factor to posterior sufficient statistics.
 
@@ -268,7 +268,7 @@ def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NI
 
     Args:
         posterior: Current NIG posterior
-        lambda_: Forgetting factor (0.9 = 10% decay per update)
+        lambda_: Forgetting factor (0.95 = 5% decay per update, preserves baseline)
 
     Returns:
         New posterior with decayed statistics
@@ -285,7 +285,7 @@ def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NI
 def update_nig_posterior(
     posterior: NIGPosterior,
     observation: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95
 ) -> NIGPosterior:
     """
     Perform Bayesian update of NIG posterior with new observation.
@@ -323,7 +323,7 @@ def update_nig_posterior(
 def update_anchored_ve_posterior(
     ve_state: VEThresholdState,
     observation: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95
 ) -> NIGPosterior:
     """
     Update VE threshold posterior using Anchor & Pull method.
@@ -528,7 +528,7 @@ def update_calibration_from_interval(
     drift_pct: float,
     sigma_pct: float,
     avg_ve: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95  # Increased from 0.9 to dampen calibration changes
 ) -> Tuple[CalibrationState, Optional[dict]]:
     """
     Update calibration state from a single interval result.
@@ -718,7 +718,6 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     heavy_expected = state.heavy.expected_drift.get_point_estimate()
     severe_expected = state.severe.expected_drift.get_point_estimate()
 
-    mod_max = state.moderate.max_drift.get_point_estimate()
     heavy_max = state.heavy.max_drift.get_point_estimate()
     severe_max = state.severe.max_drift.get_point_estimate()
 
@@ -734,12 +733,8 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
         state.heavy.expected_drift.mu = avg - 0.1
         state.severe.expected_drift.mu = avg + 0.1
 
-    # Same for max drift
-    if mod_max >= heavy_max:
-        avg = (mod_max + heavy_max) / 2
-        state.moderate.max_drift.mu = avg - 0.1
-        state.heavy.max_drift.mu = avg + 0.1
-
+    # Enforce max_drift ordering (Heavy < Severe only)
+    # Note: Moderate doesn't use max_drift in classification, so skip it
     if heavy_max >= severe_max:
         avg = (heavy_max + severe_max) / 2
         state.heavy.max_drift.mu = avg - 0.1
