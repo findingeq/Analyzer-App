@@ -304,7 +304,7 @@ export function MainChart() {
             });
             cusumLegendShown = true;
 
-            // Red segment (after alarm) - only red if not recovered
+            // Orange segment (after alarm) - always orange when alarm triggered
             series.push({
               name: "",
               type: "line",
@@ -313,7 +313,7 @@ export function MainChart() {
               data: timeValues.slice(alarmIdx).map((t, i) => [t, cusumValues[alarmIdx + i]]),
               showSymbol: false,
               lineStyle: {
-                color: recovered ? COLORS.cusumOk : COLORS.cusumAlarm,
+                color: COLORS.cusumAlarm,
                 width: 2,
               },
               emphasis: {
@@ -322,7 +322,7 @@ export function MainChart() {
               z: 4,
             });
           } else {
-            // All red (alarm from start) - unless recovered
+            // All orange (alarm from start) - always orange when alarm triggered
             series.push({
               name: cusumLegendShown ? "" : "CUSUM",
               type: "line",
@@ -331,7 +331,7 @@ export function MainChart() {
               data: timeValues.map((t, i) => [t, cusumValues[i]]),
               showSymbol: false,
               lineStyle: {
-                color: recovered ? COLORS.cusumOk : COLORS.cusumAlarm,
+                color: COLORS.cusumAlarm,
                 width: 2,
               },
               emphasis: {
