@@ -69,15 +69,79 @@ class NIGPosterior:
 
 
 @dataclass
+class AnchoredNIGPosterior:
+    """
+    NIG posterior with decaying anchor for stability.
+
+    The anchor provides early stability while gradually fading to let
+    observations fully determine the parameter value over time.
+
+    - anchor_value: Starting point (default or user-set value)
+    - anchor_kappa: Decaying weight of anchor (starts at 4.0, decays with λ)
+    - posterior: Observation-derived NIG posterior
+    """
+    anchor_value: float = 0.0      # The anchor point (default or user-set)
+    anchor_kappa: float = 4.0      # Decaying anchor weight
+    posterior: NIGPosterior = field(default_factory=NIGPosterior)
+
+    def get_anchored_mean(self) -> float:
+        """
+        Get the effective mean considering decaying anchor.
+
+        Formula: (anchor_kappa × anchor_value + obs_kappa × obs_mu) / (anchor_kappa + obs_kappa)
+        """
+        obs_kappa = self.posterior.kappa
+        obs_mu = self.posterior.mu
+
+        if self.anchor_kappa <= 0 and obs_kappa <= 0:
+            return self.anchor_value
+
+        total_kappa = self.anchor_kappa + obs_kappa
+        return (self.anchor_kappa * self.anchor_value + obs_kappa * obs_mu) / total_kappa
+
+    def get_point_estimate(self) -> float:
+        """Return the anchored mean as point estimate."""
+        return self.get_anchored_mean()
+
+    def reset_anchor(self, new_anchor_value: float, anchor_kappa: float = 4.0) -> None:
+        """
+        Reset to a new anchor (e.g., when user manually sets a value).
+
+        Clears observation posterior and starts fresh from the new anchor.
+        """
+        self.anchor_value = new_anchor_value
+        self.anchor_kappa = anchor_kappa
+        self.posterior = NIGPosterior(mu=new_anchor_value, kappa=0.0, alpha=2.0, beta=1.0, n_obs=0)
+
+    def to_dict(self) -> dict:
+        """Serialize to dictionary."""
+        return {
+            'anchor_value': self.anchor_value,
+            'anchor_kappa': self.anchor_kappa,
+            'posterior': self.posterior.to_dict()
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'AnchoredNIGPosterior':
+        """Deserialize from dictionary."""
+        return cls(
+            anchor_value=d.get('anchor_value', 0.0),
+            anchor_kappa=d.get('anchor_kappa', 4.0),
+            posterior=NIGPosterior.from_dict(d.get('posterior', {}))
+        )
+
+
+@dataclass
 class DomainPosterior:
     """
-    All NIG posteriors for a single intensity domain.
+    All posteriors for a single intensity domain.
 
     Each domain (Moderate/Heavy/Severe) has its own set of parameters.
+    Uses AnchoredNIGPosterior for stability with eventual full adaptation.
     """
-    expected_drift: NIGPosterior = field(default_factory=NIGPosterior)
-    max_drift: NIGPosterior = field(default_factory=NIGPosterior)
-    sigma: NIGPosterior = field(default_factory=NIGPosterior)
+    expected_drift: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
+    max_drift: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
+    sigma: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
@@ -91,9 +155,9 @@ class DomainPosterior:
     def from_dict(cls, d: dict) -> 'DomainPosterior':
         """Deserialize from dictionary."""
         return cls(
-            expected_drift=NIGPosterior.from_dict(d.get('expected_drift', {})),
-            max_drift=NIGPosterior.from_dict(d.get('max_drift', {})),
-            sigma=NIGPosterior.from_dict(d.get('sigma', {}))
+            expected_drift=AnchoredNIGPosterior.from_dict(d.get('expected_drift', {})),
+            max_drift=AnchoredNIGPosterior.from_dict(d.get('max_drift', {})),
+            sigma=AnchoredNIGPosterior.from_dict(d.get('sigma', {}))
         )
 
 
@@ -102,44 +166,58 @@ class VEThresholdState:
     """
     State for a VE threshold (VT1 or VT2).
 
-    Uses "Anchor & Pull" Bayesian approach:
-    - current_value is the user-approved anchor
-    - posterior tracks observations, but anchored to current_value
-    - When posterior mean diverges enough from anchor, user is prompted
+    Uses decaying anchor approach:
+    - current_value auto-updates to anchored posterior mean
+    - anchor_kappa decays over time, eventually letting observations dominate
+    - Manual override resets anchor with fresh anchor_kappa
     """
-    current_value: float = 60.0  # Current user-approved threshold (anchor)
+    current_value: float = 60.0  # Current threshold (auto-updated)
+    anchor_value: float = 60.0   # Anchor point (default or user-set)
+    anchor_kappa: float = 4.0    # Decaying anchor weight
     posterior: NIGPosterior = field(default_factory=NIGPosterior)
-    anchor_kappa: float = 4.0    # Virtual sample size for anchoring (stability)
+
+    def get_anchored_mean(self) -> float:
+        """Get the effective mean considering decaying anchor."""
+        obs_kappa = self.posterior.kappa
+        obs_mu = self.posterior.mu
+
+        if self.anchor_kappa <= 0 and obs_kappa <= 0:
+            return self.anchor_value
+
+        total_kappa = self.anchor_kappa + obs_kappa
+        return (self.anchor_kappa * self.anchor_value + obs_kappa * obs_mu) / total_kappa
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
             'current_value': self.current_value,
-            'posterior': self.posterior.to_dict(),
-            'anchor_kappa': self.anchor_kappa
+            'anchor_value': self.anchor_value,
+            'anchor_kappa': self.anchor_kappa,
+            'posterior': self.posterior.to_dict()
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> 'VEThresholdState':
         """Deserialize from dictionary."""
+        # Handle migration from old format (no anchor_value field)
+        anchor_value = d.get('anchor_value', d.get('current_value', 60.0))
         return cls(
             current_value=d.get('current_value', 60.0),
-            posterior=NIGPosterior.from_dict(d.get('posterior', {})),
-            anchor_kappa=d.get('anchor_kappa', 4.0)
+            anchor_value=anchor_value,
+            anchor_kappa=d.get('anchor_kappa', 4.0),
+            posterior=NIGPosterior.from_dict(d.get('posterior', {}))
         )
 
-    def reset_to_anchor(self) -> None:
+    def reset_anchor(self, new_value: float, anchor_kappa: float = 4.0) -> None:
         """
-        Reset posterior to be anchored at current_value.
-        Called after user approves a change or manually sets threshold.
+        Reset to a new anchor (e.g., when user manually sets a value).
+
+        Sets both current_value and anchor_value, clears posterior.
         """
-        self.posterior = NIGPosterior(
-            mu=self.current_value,
-            kappa=self.anchor_kappa,
-            alpha=2.0,
-            beta=1.0,
-            n_obs=0
-        )
+        self.current_value = new_value
+        self.anchor_value = new_value
+        self.anchor_kappa = anchor_kappa
+        self.posterior = NIGPosterior(mu=new_value, kappa=0.0, alpha=2.0, beta=1.0, n_obs=0)
 
 
 @dataclass
@@ -314,77 +392,106 @@ def update_nig_posterior(
     )
 
 
-def update_anchored_ve_posterior(
+def update_anchored_posterior(
+    anchored: AnchoredNIGPosterior,
+    observation: float,
+    lambda_: float = 0.95
+) -> AnchoredNIGPosterior:
+    """
+    Update AnchoredNIGPosterior with new observation using decaying anchor.
+
+    Both the anchor_kappa and observation posterior decay, then a new
+    observation is incorporated. Over time, observations dominate and
+    the anchor fades toward zero influence.
+
+    Args:
+        anchored: Current anchored posterior state
+        observation: New observed value
+        lambda_: Forgetting factor (applied to both anchor and observations)
+
+    Returns:
+        Updated AnchoredNIGPosterior with decayed anchor and new observation
+    """
+    # Step 1: Decay anchor_kappa
+    decayed_anchor_kappa = lambda_ * anchored.anchor_kappa
+
+    # Step 2: Apply forgetting factor to observation posterior
+    decayed_posterior = apply_forgetting_factor(anchored.posterior, lambda_)
+
+    # Step 3: Standard NIG update with the new observation
+    kappa_n = decayed_posterior.kappa + 1
+    mu_n = (decayed_posterior.kappa * decayed_posterior.mu + observation) / kappa_n if kappa_n > 0 else observation
+    alpha_n = decayed_posterior.alpha + 0.5
+    beta_n = decayed_posterior.beta + 0.5 * decayed_posterior.kappa * (observation - decayed_posterior.mu)**2 / kappa_n if kappa_n > 0 else decayed_posterior.beta
+
+    new_posterior = NIGPosterior(
+        mu=mu_n,
+        kappa=kappa_n,
+        alpha=alpha_n,
+        beta=beta_n,
+        n_obs=anchored.posterior.n_obs + 1
+    )
+
+    return AnchoredNIGPosterior(
+        anchor_value=anchored.anchor_value,
+        anchor_kappa=decayed_anchor_kappa,
+        posterior=new_posterior
+    )
+
+
+def update_ve_threshold_state(
     ve_state: VEThresholdState,
     observation: float,
     lambda_: float = 0.95
-) -> NIGPosterior:
+) -> VEThresholdState:
     """
-    Update VE threshold posterior using Anchor & Pull method.
+    Update VE threshold state with new observation using decaying anchor.
 
-    The current_value acts as a strong prior (anchor) with weight anchor_kappa.
-    This prevents single observations from causing large jumps while still
-    allowing the posterior to converge toward true values over time.
+    The anchor_kappa decays over time, eventually letting observations
+    fully determine the threshold. current_value auto-updates to the
+    anchored posterior mean.
 
     Args:
-        ve_state: Current VE threshold state (contains anchor and posterior)
+        ve_state: Current VE threshold state
         observation: New observed avg_ve value
-        lambda_: Forgetting factor for decaying old observations
+        lambda_: Forgetting factor (applied to both anchor and observations)
 
     Returns:
-        Updated NIG posterior
+        Updated VEThresholdState with new current_value
     """
-    # Step 1: Apply forgetting factor to existing posterior
-    decayed = apply_forgetting_factor(ve_state.posterior, lambda_)
+    # Step 1: Decay anchor_kappa
+    decayed_anchor_kappa = lambda_ * ve_state.anchor_kappa
 
-    # Step 2: Blend decayed posterior with anchor
-    # The anchor always contributes anchor_kappa worth of "virtual observations"
-    # at the current_value (user-approved threshold)
-    anchor_kappa = ve_state.anchor_kappa
-    anchor_value = ve_state.current_value
-
-    # Combined prior: anchor + decayed observations
-    combined_kappa = anchor_kappa + decayed.kappa
-    combined_mu = (anchor_kappa * anchor_value + decayed.kappa * decayed.mu) / combined_kappa
+    # Step 2: Apply forgetting factor to observation posterior
+    decayed_posterior = apply_forgetting_factor(ve_state.posterior, lambda_)
 
     # Step 3: Standard NIG update with the new observation
-    kappa_n = combined_kappa + 1
-    mu_n = (combined_kappa * combined_mu + observation) / kappa_n
-    alpha_n = decayed.alpha + 0.5
-    beta_n = decayed.beta + 0.5 * combined_kappa * (observation - combined_mu)**2 / kappa_n
+    kappa_n = decayed_posterior.kappa + 1
+    mu_n = (decayed_posterior.kappa * decayed_posterior.mu + observation) / kappa_n if kappa_n > 0 else observation
+    alpha_n = decayed_posterior.alpha + 0.5
+    beta_n = decayed_posterior.beta + 0.5 * decayed_posterior.kappa * (observation - decayed_posterior.mu)**2 / kappa_n if kappa_n > 0 else decayed_posterior.beta
 
-    return NIGPosterior(
+    new_posterior = NIGPosterior(
         mu=mu_n,
-        kappa=kappa_n - anchor_kappa,  # Store only observation-derived kappa
+        kappa=kappa_n,
         alpha=alpha_n,
         beta=beta_n,
         n_obs=ve_state.posterior.n_obs + 1
     )
 
+    # Calculate new anchored mean
+    total_kappa = decayed_anchor_kappa + new_posterior.kappa
+    if total_kappa > 0:
+        new_current_value = (decayed_anchor_kappa * ve_state.anchor_value + new_posterior.kappa * new_posterior.mu) / total_kappa
+    else:
+        new_current_value = ve_state.anchor_value
 
-def get_anchored_posterior_mean(ve_state: VEThresholdState) -> float:
-    """
-    Get the effective posterior mean considering the anchor.
-
-    This combines the anchor (current_value with anchor_kappa weight)
-    with the observation-derived posterior.
-
-    Args:
-        ve_state: Current VE threshold state
-
-    Returns:
-        Anchored posterior mean
-    """
-    anchor_kappa = ve_state.anchor_kappa
-    anchor_value = ve_state.current_value
-    obs_kappa = ve_state.posterior.kappa
-    obs_mu = ve_state.posterior.mu
-
-    if obs_kappa <= 0:
-        return anchor_value
-
-    combined_kappa = anchor_kappa + obs_kappa
-    return (anchor_kappa * anchor_value + obs_kappa * obs_mu) / combined_kappa
+    return VEThresholdState(
+        current_value=round(new_current_value, 1),  # Round to 0.1 L/min
+        anchor_value=ve_state.anchor_value,
+        anchor_kappa=decayed_anchor_kappa,
+        posterior=new_posterior
+    )
 
 
 def blend_with_default(
@@ -531,6 +638,11 @@ def update_calibration_from_run(
     When eligible, averaged values from majority intervals are used for calibration.
     Each run counts as ONE calibration sample regardless of number of intervals.
 
+    All parameters use decaying anchor approach:
+    - Early runs: anchor provides stability
+    - Later runs: observations dominate as anchor fades
+    - VE thresholds auto-update (no user prompt)
+
     Args:
         state: Current calibration state
         run_type: Intensity domain (MODERATE, HEAVY, or SEVERE)
@@ -543,8 +655,7 @@ def update_calibration_from_run(
         lambda_: Forgetting factor for Bayesian updates
 
     Returns:
-        Tuple of (updated_state, ve_prompt) where ve_prompt is dict if
-        user approval needed for VE threshold change >= 1 L/min
+        Tuple of (updated_state, None) - ve_prompt is always None (auto-update)
     """
     # Skip calibration updates if calibration is disabled
     if not state.enabled:
@@ -597,8 +708,6 @@ def update_calibration_from_run(
     avg_sigma_pct = sum(i['sigma_pct'] for i in majority_intervals) / len(majority_intervals)
     avg_avg_ve = sum(i['avg_ve'] for i in majority_intervals) / len(majority_intervals)
 
-    ve_prompt = None
-
     # Step 5: Check domain eligibility and update drift/sigma calibration
     # Moderate and Heavy expect BELOW_THRESHOLD, Severe expects ABOVE_THRESHOLD
     domain_expects_below = run_type in (RunType.MODERATE, RunType.HEAVY)
@@ -609,9 +718,9 @@ def update_calibration_from_run(
         # Eligible for drift/sigma calibration
         domain = state.get_domain_posterior(run_type)
 
-        # Update expected_drift and sigma with averaged values
-        domain.expected_drift = update_nig_posterior(domain.expected_drift, avg_drift_pct, lambda_)
-        domain.sigma = update_nig_posterior(domain.sigma, avg_sigma_pct, lambda_)
+        # Update expected_drift and sigma using decaying anchor approach
+        domain.expected_drift = update_anchored_posterior(domain.expected_drift, avg_drift_pct, lambda_)
+        domain.sigma = update_anchored_posterior(domain.sigma, avg_sigma_pct, lambda_)
 
         # Note: max_drift values are derived from expected_drift in enforce_ordinal_constraints
         # - moderate.max_drift = heavy.expected_drift
@@ -627,58 +736,40 @@ def update_calibration_from_run(
     )
 
     if threshold_key:
-        ve_state = state.vt1_ve if threshold_key == 'vt1' else state.vt2_ve
-
-        # Update posterior using Anchor & Pull method with averaged avg_ve
-        ve_state.posterior = update_anchored_ve_posterior(ve_state, avg_avg_ve, lambda_)
-
-        # Get anchored posterior mean (blends anchor with observations)
-        posterior_mean = get_anchored_posterior_mean(ve_state)
-
-        # Check if we need to prompt user (posterior diverged >= 1 L/min from anchor)
-        divergence = posterior_mean - ve_state.current_value
-        if abs(divergence) >= 1.0:
-            ve_prompt = {
-                'threshold': threshold_key,
-                'current_value': ve_state.current_value,
-                'proposed_value': round(posterior_mean, 1),
-                'divergence': round(divergence, 1)
-            }
+        # Update VE threshold using decaying anchor (auto-updates current_value)
+        if threshold_key == 'vt1':
+            state.vt1_ve = update_ve_threshold_state(state.vt1_ve, avg_avg_ve, lambda_)
+        else:
+            state.vt2_ve = update_ve_threshold_state(state.vt2_ve, avg_avg_ve, lambda_)
 
     state.last_updated = datetime.utcnow()
-    return state, ve_prompt
+    return state, None  # No prompt - VE thresholds auto-update
 
 
-def apply_ve_threshold_approval(
+def apply_manual_threshold_override(
     state: CalibrationState,
     threshold_key: str,
-    approved: bool,
-    proposed_value: float
+    new_value: float
 ) -> CalibrationState:
     """
-    Apply user's approval/rejection of VE threshold change.
+    Apply user's manual override of a VE threshold.
 
-    After approval or rejection, the anchor is reset to the new current_value.
-    This means future observations start fresh relative to the new baseline.
+    When user manually sets a threshold value, it becomes a new anchor.
+    This resets the observation posterior and starts fresh calibration
+    from the user-specified value.
 
     Args:
         state: Current calibration state
         threshold_key: 'vt1' or 'vt2'
-        approved: Whether user approved the change
-        proposed_value: The value that was proposed to the user
+        new_value: The new threshold value set by user
 
     Returns:
         Updated calibration state
     """
-    ve_state = state.vt1_ve if threshold_key == 'vt1' else state.vt2_ve
-
-    if approved:
-        # Apply the proposed change
-        ve_state.current_value = proposed_value
-
-    # Reset posterior to anchor at new/current value (either way)
-    # This starts fresh observation tracking from the approved baseline
-    ve_state.reset_to_anchor()
+    if threshold_key == 'vt1':
+        state.vt1_ve.reset_anchor(new_value)
+    else:
+        state.vt2_ve.reset_anchor(new_value)
 
     return state
 
@@ -752,31 +843,28 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     Returns:
         State with constraints enforced
     """
-    # Get point estimates
+    # Get point estimates (uses anchored mean from AnchoredNIGPosterior)
     mod_expected = state.moderate.expected_drift.get_point_estimate()
     heavy_expected = state.heavy.expected_drift.get_point_estimate()
     severe_expected = state.severe.expected_drift.get_point_estimate()
 
-    heavy_max = state.heavy.max_drift.get_point_estimate()
-    severe_max = state.severe.max_drift.get_point_estimate()
-
     # Enforce: Moderate < Heavy
     if mod_expected >= heavy_expected:
         avg = (mod_expected + heavy_expected) / 2
-        state.moderate.expected_drift.mu = avg - 0.1
-        state.heavy.expected_drift.mu = avg + 0.1
+        state.moderate.expected_drift.posterior.mu = avg - 0.1
+        state.heavy.expected_drift.posterior.mu = avg + 0.1
 
     # Enforce: Heavy < Severe
     if heavy_expected >= severe_expected:
         avg = (heavy_expected + severe_expected) / 2
-        state.heavy.expected_drift.mu = avg - 0.1
-        state.severe.expected_drift.mu = avg + 0.1
+        state.heavy.expected_drift.posterior.mu = avg - 0.1
+        state.severe.expected_drift.posterior.mu = avg + 0.1
 
     # Derive max_drift values from the next domain's expected_drift
     # Moderate's ceiling = Heavy's expected (where heavy domain starts)
     # Heavy's ceiling = Severe's expected (where severe domain starts)
-    state.moderate.max_drift.mu = state.heavy.expected_drift.get_point_estimate()
-    state.heavy.max_drift.mu = state.severe.expected_drift.get_point_estimate()
+    state.moderate.max_drift.posterior.mu = state.heavy.expected_drift.get_point_estimate()
+    state.heavy.max_drift.posterior.mu = state.severe.expected_drift.get_point_estimate()
 
     # Enforce VT1 < VT2
     if state.vt1_ve.current_value >= state.vt2_ve.current_value:

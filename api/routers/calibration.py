@@ -20,7 +20,7 @@ from ..models.enums import RunType, IntervalStatus
 from ..services.calibration import (
     CalibrationState,
     update_calibration_from_run,
-    apply_ve_threshold_approval,
+    apply_manual_threshold_override,
     get_blended_params,
     enforce_ordinal_constraints,
     DEFAULT_VT1_VE,
@@ -173,21 +173,23 @@ def update_calibration(request: CalibrationUpdateRequest):
 @router.post("/approve-ve")
 def approve_ve_threshold(request: VEApprovalRequest):
     """
-    Apply user's approval/rejection of VE threshold change.
+    DEPRECATED: VE thresholds now auto-update without user approval.
 
-    Called when user responds to the VE threshold prompt.
-    After approval or rejection, the anchor is reset to start fresh.
+    This endpoint is kept for backwards compatibility but simply applies
+    the proposed value as a manual override (which creates a new anchor).
     """
     if request.threshold not in ('vt1', 'vt2'):
         raise HTTPException(status_code=400, detail="threshold must be 'vt1' or 'vt2'")
 
     state = _load_calibration_state(request.user_id)
-    state = apply_ve_threshold_approval(
-        state,
-        request.threshold,
-        request.approved,
-        request.proposed_value
-    )
+
+    # If approved, apply as manual override (creates new anchor)
+    if request.approved:
+        state = apply_manual_threshold_override(
+            state,
+            request.threshold,
+            request.proposed_value
+        )
 
     # Save updated state
     _save_calibration_state(request.user_id, state)
@@ -255,12 +257,8 @@ def set_ve_threshold_manual(
 
     state = _load_calibration_state(user_id)
 
-    if threshold == 'vt1':
-        state.vt1_ve.current_value = value
-        state.vt1_ve.reset_to_anchor()  # Reset posterior to new anchor
-    else:
-        state.vt2_ve.current_value = value
-        state.vt2_ve.reset_to_anchor()  # Reset posterior to new anchor
+    # Use manual override which sets both value and resets anchor
+    state = apply_manual_threshold_override(state, threshold, value)
 
     # Enforce VT1 < VT2 constraint
     state = enforce_ordinal_constraints(state)
@@ -308,23 +306,23 @@ def set_advanced_params(request: AdvancedParamsRequest):
     Manually set advanced calibration parameters.
 
     Called when user manually changes advanced params in the UI.
-    This directly sets the NIG posterior mu values for each domain.
+    Manual values become new anchors with reset observation posteriors.
     """
     state = _load_calibration_state(request.user_id)
 
-    # Update Moderate domain (VT1)
-    state.moderate.expected_drift.mu = request.expected_drift_vt1
-    state.moderate.sigma.mu = request.sigma_pct_vt1
+    # Update Moderate domain (VT1) - reset anchors to user values
+    state.moderate.expected_drift.reset_anchor(request.expected_drift_vt1)
+    state.moderate.sigma.reset_anchor(request.sigma_pct_vt1)
 
-    # Update Heavy domain (VT2)
-    state.heavy.expected_drift.mu = request.expected_drift_vt2
-    state.heavy.max_drift.mu = request.max_drift_vt2
-    state.heavy.sigma.mu = request.sigma_pct_vt2
+    # Update Heavy domain (VT2) - reset anchors to user values
+    state.heavy.expected_drift.reset_anchor(request.expected_drift_vt2)
+    state.heavy.max_drift.reset_anchor(request.max_drift_vt2)
+    state.heavy.sigma.reset_anchor(request.sigma_pct_vt2)
 
     # Update Severe domain (uses same values as Heavy for VT2)
-    state.severe.expected_drift.mu = request.expected_drift_vt2
-    state.severe.max_drift.mu = request.max_drift_vt2
-    state.severe.sigma.mu = request.sigma_pct_vt2
+    state.severe.expected_drift.reset_anchor(request.expected_drift_vt2)
+    state.severe.max_drift.reset_anchor(request.max_drift_vt2)
+    state.severe.sigma.reset_anchor(request.sigma_pct_vt2)
 
     # Note: H multipliers are not stored in calibration state
     # They are passed directly in AnalysisParams from the frontend

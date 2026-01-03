@@ -264,16 +264,23 @@ export interface NIGPosterior {
   n_obs: number;
 }
 
+export interface AnchoredNIGPosterior {
+  anchor_value: number;
+  anchor_kappa: number;
+  posterior: NIGPosterior;
+}
+
 export interface DomainPosterior {
-  expected_drift: NIGPosterior;
-  max_drift: NIGPosterior;
-  sigma: NIGPosterior;
+  expected_drift: AnchoredNIGPosterior;
+  max_drift: AnchoredNIGPosterior;
+  sigma: AnchoredNIGPosterior;
 }
 
 export interface VEThresholdState {
   current_value: number;
-  posterior: NIGPosterior;
+  anchor_value: number;
   anchor_kappa: number;
+  posterior: NIGPosterior;
 }
 
 export interface CalibrationState {

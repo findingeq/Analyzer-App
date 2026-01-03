@@ -29,25 +29,37 @@ Then perform standard Bayesian update with new observation.
 - Preserves valid confidence intervals
 - No separate EMA formula needed (would cause "double damping")
 
-### VE Threshold Calibration: Anchor & Pull Method
+### Decaying Anchor Approach (All Parameters)
 
-For VE thresholds (VT1/VT2), we use an **Anchor & Pull** approach with **κ=4**:
+All calibrated parameters use a **Decaying Anchor** approach:
 
-- **Anchor**: The user-approved threshold acts as a strong prior worth 4 virtual observations
-- **Pull**: Observed avg_ve values during unexpected outcomes pull the posterior mean toward physiological reality
-- **Prompt**: User is prompted when posterior mean diverges ≥1 L/min from anchor
+- **Anchor**: Starting point (system default or user-set value) with initial κ=4
+- **Decay**: Anchor κ decays with same forgetting factor (λ=0.95) as observation posterior
+- **Convergence**: Early runs have anchor stability (~80% weight), later runs converge to observations
 
-**Why Anchor & Pull vs Delta Accumulation:**
+**Why Decaying Anchor:**
 
-| Approach | VT1=60, observe 75 L/min | VT1=60, 3× observe 75 L/min |
-|----------|--------------------------|------------------------------|
-| Delta Accumulation | +0.5-1.0 nudge → 61 | ~62.5 (15+ runs to reach 75) |
-| Anchor & Pull (κ=4) | Posterior ≈ 63 | Posterior ≈ 66-67 |
+| Run # | Anchor κ | Obs κ | Anchor Weight | Observation Weight |
+|-------|----------|-------|---------------|-------------------|
+| 1     | 4.0      | 1.0   | 80%           | 20%               |
+| 3     | 3.4      | 2.7   | 56%           | 44%               |
+| 5     | 3.1      | 3.9   | 44%           | 56%               |
+| 10    | 2.4      | 6.6   | 27%           | 73%               |
+| 20    | 1.5      | 10.2  | 13%           | 87%               |
 
 Benefits:
-1. **Physiological Directness**: avg_ve IS the measurement, not just a directional signal
-2. **Convergence Speed**: Bad ramp test corrects in 2-3 runs, not 15-20
-3. **Mathematical Robustness**: κ scales step size based on certainty, no magic numbers
+1. **Early Stability**: Anchor provides ~80% stability for first few runs
+2. **Full Convergence**: Anchor fades to ~10-15% over time, letting observations dominate
+3. **Manual Override**: User can set a new anchor at any time, resetting observation posterior
+
+**Formula:**
+```
+effective_value = (anchor_κ × anchor_value + obs_κ × obs_mu) / (anchor_κ + obs_κ)
+```
+
+After each observation:
+- `anchor_κ' = λ × anchor_κ` (decay anchor)
+- `obs_κ' = λ × obs_κ + 1` (decay + add new observation)
 
 ---
 
@@ -190,16 +202,19 @@ Domain models are kept pure for expected_drift and sigma. If a Severe run unexpe
 | Severe | BELOW_THRESHOLD | > VT2 VE | YES | Increase VT2 ceiling |
 | Severe | BELOW_THRESHOLD | ≤ VT2 VE | NO | No update |
 
-### Anchor & Pull Mechanics:
+### Auto-Update Mechanics:
 
-When an unexpected outcome occurs:
-1. **Update posterior**: Observed avg_ve is fed into NIG posterior using anchored update
-2. **Calculate posterior mean**: Blend anchor (κ=4) with observation-derived posterior
-3. **Check divergence**: If `|posterior_mean - current_value| ≥ 1 L/min`, prompt user
+VE thresholds use the same decaying anchor approach as drift/sigma:
+
+1. **Update posterior**: Observed avg_ve is fed into NIG posterior
+2. **Decay anchor**: anchor_κ decays with forgetting factor λ=0.95
+3. **Auto-update current_value**: The threshold automatically updates to the anchored mean
 
 ```
-anchored_mean = (anchor_κ × current_value + obs_κ × obs_mean) / (anchor_κ + obs_κ)
+current_value = (anchor_κ × anchor_value + obs_κ × obs_mu) / (anchor_κ + obs_κ)
 ```
+
+**No user prompts**: Thresholds auto-populate from cloud calibration. Users can manually override at any time.
 
 ### Multi-Interval Runs:
 
@@ -209,11 +224,10 @@ For runs with multiple intervals, VE threshold calibration uses the same majorit
 2. **Averaged avg_ve** from majority intervals is used for unexpected outcome check
 3. Example: Moderate run with 4/7 intervals ABOVE_THRESHOLD → majority is ABOVE, use avg of those 4 intervals' avg_ve values
 
-### User Approval/Rejection:
-- **Approve**: New value becomes the anchor; posterior resets to fresh state
-- **Reject**: Current value remains anchor; posterior resets (starts fresh tracking)
-
-Both actions reset the posterior, meaning future observations start fresh relative to the (new or existing) anchor. This prevents stale observations from accumulating indefinitely.
+### Manual Override:
+- **Manual threshold change**: User sets new value → becomes new anchor, observation posterior resets
+- This allows users to "lock in" a specific threshold value at any time
+- Future observations start fresh relative to the new anchor
 
 ---
 
@@ -258,17 +272,14 @@ Both actions reset the posterior, meaning future observations start fresh relati
    - Allows user to exclude specific runs from calibration
    - Useful for unusual/outlier sessions
 
-6. **VE threshold approval popup** - when cumulative change ≥ ±1 L/min
-   - Shows proposed new threshold
-   - User can accept or reject
-   - Both approval and rejection reset the Bayesian posterior (starts fresh tracking)
-
-7. **Manual threshold override** - from web app or iOS app
+6. **Manual threshold override** - from web app or iOS app
    - User can directly edit VT1/VT2 threshold values at any time
    - Change syncs to cloud immediately (bidirectional)
-   - Resets Bayesian posterior to new anchor value
+   - Resets both anchor and observation posterior to new value
    - Future calibration observations start fresh from this baseline
    - Endpoint: `POST /api/calibration/set-ve-threshold`
+
+**Note**: VE thresholds auto-update without user prompts. The approval popup has been removed - calibrated values automatically populate from the cloud.
 
 ---
 
@@ -276,12 +287,12 @@ Both actions reset the posterior, meaning future observations start fresh relati
 
 ```python
 class CalibrationState:
-    # Per-domain NIG posteriors
+    # Per-domain posteriors (each using decaying anchor)
     moderate: DomainPosterior
     heavy: DomainPosterior
     severe: DomainPosterior
 
-    # Global VE thresholds
+    # Global VE thresholds (using decaying anchor)
     vt1_ve: VEThresholdState
     vt2_ve: VEThresholdState
 
@@ -293,14 +304,20 @@ class CalibrationState:
     run_counts: Dict[str, int]  # qualifying runs per domain (1 per run, not per interval)
 
 class DomainPosterior:
-    expected_drift: NIGPosterior  # Calibrated from observations
-    max_drift: NIGPosterior       # Derived from next domain's expected_drift
-    sigma: NIGPosterior           # Calibrated from observations
+    expected_drift: AnchoredNIGPosterior  # Calibrated from observations
+    max_drift: AnchoredNIGPosterior       # Derived from next domain's expected_drift
+    sigma: AnchoredNIGPosterior           # Calibrated from observations
+
+class AnchoredNIGPosterior:
+    anchor_value: float     # Starting point (default or user-set)
+    anchor_kappa: float     # Decaying anchor weight (starts at 4.0)
+    posterior: NIGPosterior # Observation-derived posterior
 
 class VEThresholdState:
-    current_value: float     # User-approved threshold (anchor)
+    current_value: float     # Current threshold (auto-updated from anchored mean)
+    anchor_value: float      # Anchor point (default or user-set)
+    anchor_kappa: float      # Decaying anchor weight (starts at 4.0)
     posterior: NIGPosterior  # Observation-derived posterior
-    anchor_kappa: float = 4.0  # Virtual sample size for anchoring
 
 class NIGPosterior:
     mu: float      # mean
@@ -318,10 +335,11 @@ class NIGPosterior:
 |----------|--------|-------------|
 | `/api/calibration/params` | GET | Get calibrated params for iOS sync (includes `enabled` flag) |
 | `/api/calibration/state` | GET | Get full user's calibration state |
-| `/api/calibration/update` | POST | Update calibration from run result |
+| `/api/calibration/update` | POST | Update calibration from run result (auto-updates thresholds) |
 | `/api/calibration/reset` | POST | Reset to defaults |
-| `/api/calibration/approve-ve` | POST | User approves/rejects VE threshold change |
+| `/api/calibration/approve-ve` | POST | DEPRECATED: Kept for backwards compatibility |
 | `/api/calibration/set-ve-threshold` | POST | Manual threshold override (resets anchor) |
+| `/api/calibration/set-advanced-params` | POST | Manual override for drift/sigma params (resets anchors) |
 | `/api/calibration/blended-params` | GET | Get blended params for a run type |
 | `/api/calibration/toggle` | POST | Enable/disable calibration (preserves learned data) |
 
@@ -335,10 +353,10 @@ When running analysis:
 3. Blend calibrated values with defaults based on run count
 4. Use blended parameters for CUSUM analysis
 5. After classification:
-   - Check if outcome triggers drift/sigma calibration (domain-specific only)
-   - Check if outcome triggers VE threshold calibration
-   - Apply forgetting factor to posteriors, then update
-   - Check if VE threshold change ≥ ±1 L/min for user prompt
+   - Check majority classification across intervals
+   - If majority matches domain expectations: update drift/sigma posteriors
+   - If unexpected outcome: update VE threshold posterior (auto-updates current_value)
+   - Both anchor and observation posteriors decay with λ=0.95
 
 ---
 
@@ -639,3 +657,8 @@ Response:
 | 2026-01-03 | **Majority-based calibration**: Each run counts as ONE sample, not per-interval |
 | 2026-01-03 | Multi-interval runs require >50% majority classification to count for calibration |
 | 2026-01-03 | Averaged values from majority intervals used for calibration updates |
+| 2026-01-03 | **Decaying Anchor**: All parameters now use decaying anchor approach (not just VE thresholds) |
+| 2026-01-03 | VE thresholds auto-update without user prompts - values auto-populate from cloud |
+| 2026-01-03 | anchor_kappa decays with λ=0.95, allowing observations to dominate over time |
+| 2026-01-03 | Added AnchoredNIGPosterior structure for drift/sigma parameters |
+| 2026-01-03 | Manual override creates new anchor and resets observation posterior |

@@ -316,18 +316,26 @@ class NIGPosteriorSchema(BaseModel):
     n_obs: int = Field(default=0, description="Observation count")
 
 
+class AnchoredNIGPosteriorSchema(BaseModel):
+    """NIG posterior with decaying anchor for stability."""
+    anchor_value: float = Field(default=0.0, description="Anchor point (default or user-set)")
+    anchor_kappa: float = Field(default=4.0, description="Decaying anchor weight")
+    posterior: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+
+
 class DomainPosteriorSchema(BaseModel):
-    """All NIG posteriors for a single intensity domain."""
-    expected_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
-    max_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
-    sigma: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
+    """All posteriors for a single intensity domain using decaying anchors."""
+    expected_drift: AnchoredNIGPosteriorSchema = Field(default_factory=AnchoredNIGPosteriorSchema)
+    max_drift: AnchoredNIGPosteriorSchema = Field(default_factory=AnchoredNIGPosteriorSchema)
+    sigma: AnchoredNIGPosteriorSchema = Field(default_factory=AnchoredNIGPosteriorSchema)
 
 
 class VEThresholdStateSchema(BaseModel):
-    """State for a VE threshold (VT1 or VT2) using Anchor & Pull method."""
-    current_value: float = Field(default=60.0, description="Current user-approved threshold (anchor)")
+    """State for a VE threshold (VT1 or VT2) using decaying anchor."""
+    current_value: float = Field(default=60.0, description="Current threshold (auto-updated)")
+    anchor_value: float = Field(default=60.0, description="Anchor point (default or user-set)")
+    anchor_kappa: float = Field(default=4.0, description="Decaying anchor weight")
     posterior: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
-    anchor_kappa: float = Field(default=4.0, description="Virtual sample size for anchoring")
 
 
 class CalibrationStateSchema(BaseModel):
