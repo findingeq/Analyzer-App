@@ -657,10 +657,6 @@ export function MainChart() {
         {
           type: "value",
           gridIndex: 2,
-          name: "CUSUM",
-          nameTextStyle: {
-            color: COLORS.cusumOk,
-          },
           position: "right",
           min: cusumAxisMin,
           max: Math.ceil(cusumAxisMax),
@@ -682,10 +678,6 @@ export function MainChart() {
         {
           type: "value",
           gridIndex: 1,
-          name: "HR (bpm)",
-          nameTextStyle: {
-            color: COLORS.hr,
-          },
           position: "right",
           min: Math.floor(hrAxisMin),
           max: Math.ceil(hrAxisMax),
