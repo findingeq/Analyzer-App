@@ -259,7 +259,7 @@ DEFAULT_VT2_VE = 80.0
 # NIG Bayesian Update Functions
 # ============================================================================
 
-def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NIGPosterior:
+def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.95) -> NIGPosterior:
     """
     Apply forgetting factor to posterior sufficient statistics.
 
@@ -268,7 +268,7 @@ def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NI
 
     Args:
         posterior: Current NIG posterior
-        lambda_: Forgetting factor (0.9 = 10% decay per update)
+        lambda_: Forgetting factor (0.95 = 5% decay per update, preserves baseline)
 
     Returns:
         New posterior with decayed statistics
@@ -285,7 +285,7 @@ def apply_forgetting_factor(posterior: NIGPosterior, lambda_: float = 0.9) -> NI
 def update_nig_posterior(
     posterior: NIGPosterior,
     observation: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95
 ) -> NIGPosterior:
     """
     Perform Bayesian update of NIG posterior with new observation.
@@ -323,7 +323,7 @@ def update_nig_posterior(
 def update_anchored_ve_posterior(
     ve_state: VEThresholdState,
     observation: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95
 ) -> NIGPosterior:
     """
     Update VE threshold posterior using Anchor & Pull method.
@@ -528,7 +528,7 @@ def update_calibration_from_interval(
     drift_pct: float,
     sigma_pct: float,
     avg_ve: float,
-    lambda_: float = 0.9
+    lambda_: float = 0.95  # Increased from 0.9 to dampen calibration changes
 ) -> Tuple[CalibrationState, Optional[dict]]:
     """
     Update calibration state from a single interval result.
@@ -562,15 +562,16 @@ def update_calibration_from_interval(
         domain.expected_drift = update_nig_posterior(domain.expected_drift, drift_pct, lambda_)
         domain.sigma = update_nig_posterior(domain.sigma, sigma_pct, lambda_)
 
-        # Cross-domain max_drift calibration (only for Heavy domain)
-        # Severe's expected_drift becomes Heavy's ceiling
-        # Note: Moderate no longer uses max_drift in classification
-        if run_type == RunType.SEVERE:
-            heavy_domain = state.get_domain_posterior(RunType.HEAVY)
-            severe_expected = domain.expected_drift.get_point_estimate()
-            heavy_domain.max_drift = update_nig_posterior(
-                heavy_domain.max_drift, severe_expected, lambda_
-            )
+        # Update split_ratio only for Heavy (not Moderate or Severe)
+        # Moderate doesn't use split_ratio in classification
+        # Severe doesn't have a max_drift ceiling to inform
+        if run_type == RunType.HEAVY:
+            if split_ratio is not None and split_ratio > 0:
+                domain.split_ratio = update_nig_posterior(domain.split_ratio, split_ratio, lambda_)
+
+        # Note: max_drift values are derived from expected_drift in enforce_ordinal_constraints
+        # - moderate.max_drift = heavy.expected_drift
+        # - heavy.max_drift = severe.expected_drift
 
         # Increment qualifying run count
         state.increment_run_count(run_type)
@@ -718,7 +719,6 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     heavy_expected = state.heavy.expected_drift.get_point_estimate()
     severe_expected = state.severe.expected_drift.get_point_estimate()
 
-    mod_max = state.moderate.max_drift.get_point_estimate()
     heavy_max = state.heavy.max_drift.get_point_estimate()
     severe_max = state.severe.max_drift.get_point_estimate()
 
@@ -734,16 +734,11 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
         state.heavy.expected_drift.mu = avg - 0.1
         state.severe.expected_drift.mu = avg + 0.1
 
-    # Same for max drift
-    if mod_max >= heavy_max:
-        avg = (mod_max + heavy_max) / 2
-        state.moderate.max_drift.mu = avg - 0.1
-        state.heavy.max_drift.mu = avg + 0.1
-
-    if heavy_max >= severe_max:
-        avg = (heavy_max + severe_max) / 2
-        state.heavy.max_drift.mu = avg - 0.1
-        state.severe.max_drift.mu = avg + 0.1
+    # Derive max_drift values from the next domain's expected_drift
+    # Moderate's ceiling = Heavy's expected (where heavy domain starts)
+    # Heavy's ceiling = Severe's expected (where severe domain starts)
+    state.moderate.max_drift.mu = state.heavy.expected_drift.get_point_estimate()
+    state.heavy.max_drift.mu = state.severe.expected_drift.get_point_estimate()
 
     # Enforce VT1 < VT2
     if state.vt1_ve.current_value >= state.vt2_ve.current_value:

@@ -92,12 +92,31 @@ export function Sidebar() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [calibrationLoaded, setCalibrationLoaded] = useState(false);
 
+  // User ID for calibration sync (editable for phone app sync)
+  const [userId, setUserId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem("vt_calibration_user_id") || "default";
+    }
+    return "default";
+  });
+
   const queryClient = useQueryClient();
+
+  // Handle user ID change
+  const handleUserIdChange = useCallback((newUserId: string) => {
+    const trimmed = newUserId.trim() || "default";
+    setUserId(trimmed);
+    localStorage.setItem("vt_calibration_user_id", trimmed);
+    // Reset calibrationLoaded to allow re-fetch with new user
+    setCalibrationLoaded(false);
+    // Invalidate query to refetch with new user ID
+    queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
+  }, [queryClient]);
 
   // Fetch calibration params (for populating VT thresholds)
   const calibrationQuery = useQuery({
-    queryKey: ["calibration-params"],
-    queryFn: () => getCalibrationParams(),
+    queryKey: ["calibration-params", userId],
+    queryFn: () => getCalibrationParams(userId),
     retry: false,
   });
 
@@ -124,8 +143,8 @@ export function Sidebar() {
   const handleSaveVEThresholds = useCallback(async () => {
     setIsSyncing(true);
     try {
-      await setVEThresholdManual("vt1", vt1Ceiling);
-      await setVEThresholdManual("vt2", vt2Ceiling);
+      await setVEThresholdManual("vt1", vt1Ceiling, userId);
+      await setVEThresholdManual("vt2", vt2Ceiling, userId);
       // Invalidate calibration query to refresh
       queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
     } catch (error) {
@@ -133,7 +152,7 @@ export function Sidebar() {
     } finally {
       setIsSyncing(false);
     }
-  }, [vt1Ceiling, vt2Ceiling, queryClient]);
+  }, [vt1Ceiling, vt2Ceiling, userId, queryClient]);
 
   // Sync advanced params to cloud calibration
   const handleSyncAdvancedParams = useCallback(async () => {
@@ -148,7 +167,7 @@ export function Sidebar() {
         expectedDriftVt2: advancedParams.expectedDriftVt2,
         maxDriftVt2: advancedParams.maxDriftVt2,
         hMultiplierVt2: advancedParams.hMultiplierVt2,
-      });
+      }, userId);
       // Invalidate calibration query to refresh
       queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
     } catch (error) {
@@ -156,13 +175,13 @@ export function Sidebar() {
     } finally {
       setIsSyncing(false);
     }
-  }, [advancedParams, queryClient]);
+  }, [advancedParams, userId, queryClient]);
 
   // Restore advanced params from cloud calibration
   const handleRestoreAdvancedParams = useCallback(async () => {
     setIsRestoring(true);
     try {
-      const params = await getCalibrationParams();
+      const params = await getCalibrationParams(userId);
       // Only restore advanced params (not VT1/VT2 VE)
       setAdvancedParams({
         sigmaPctVt1: params.sigma_pct_moderate,
@@ -177,7 +196,7 @@ export function Sidebar() {
     } finally {
       setIsRestoring(false);
     }
-  }, [setAdvancedParams]);
+  }, [userId, setAdvancedParams]);
 
   // Parse CSV mutation
   const parseMutation = useMutation({
@@ -658,6 +677,23 @@ export function Sidebar() {
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="space-y-4 pt-0">
+              {/* User ID for phone app sync */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  User ID (for phone app sync)
+                </label>
+                <Input
+                  type="text"
+                  placeholder="default"
+                  value={userId}
+                  onChange={(e) => handleUserIdChange(e.target.value)}
+                  className="h-8 font-mono text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Use same ID in phone app to sync calibration
+                </p>
+              </div>
+
               {/* Ramp-up Override */}
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">
