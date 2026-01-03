@@ -33,7 +33,7 @@ import {
   updateCalibration,
   setVEThresholdManual,
   getCalibrationParams,
-  setAdvancedParams,
+  setAdvancedParams as syncAdvancedParamsToCloud,
   type SessionInfo,
 } from "@/lib/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -144,7 +144,7 @@ export function Sidebar() {
   const handleSyncAdvancedParams = useCallback(async () => {
     setIsSyncing(true);
     try {
-      await setAdvancedParams({
+      await syncAdvancedParamsToCloud({
         sigmaPctVt1: advancedParams.sigmaPctVt1,
         expectedDriftVt1: advancedParams.expectedDriftVt1,
         hMultiplierVt1: advancedParams.hMultiplierVt1,
