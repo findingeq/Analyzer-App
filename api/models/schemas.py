@@ -321,7 +321,6 @@ class DomainPosteriorSchema(BaseModel):
     expected_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
     max_drift: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
     sigma: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
-    split_ratio: NIGPosteriorSchema = Field(default_factory=NIGPosteriorSchema)
 
 
 class VEThresholdStateSchema(BaseModel):
@@ -356,9 +355,6 @@ class CalibrationParamsResponse(BaseModel):
     max_drift_moderate: float = Field(description="Max drift % threshold for Moderate domain")
     max_drift_heavy: float = Field(description="Max drift % threshold for Heavy domain")
     max_drift_severe: float = Field(description="Max drift % threshold for Severe domain")
-    split_ratio_moderate: float = Field(description="Split slope ratio for Moderate domain")
-    split_ratio_heavy: float = Field(description="Split slope ratio for Heavy domain")
-    split_ratio_severe: float = Field(description="Split slope ratio for Severe domain")
     enabled: bool = Field(default=True, description="Whether calibration is active")
     last_updated: Optional[str] = Field(default=None, description="ISO timestamp")
 
@@ -399,5 +395,4 @@ class AdvancedParamsRequest(BaseModel):
     sigma_pct_vt2: float = Field(description="Sigma % for VT2/Heavy")
     expected_drift_vt2: float = Field(description="Expected drift %/min for VT2/Heavy")
     max_drift_vt2: float = Field(description="Max drift % for VT2/Heavy")
-    split_ratio_vt2: float = Field(description="Split ratio for VT2/Heavy")
     h_multiplier_vt2: float = Field(description="H multiplier for VT2/Heavy")

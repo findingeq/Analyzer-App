@@ -268,7 +268,6 @@ export interface DomainPosterior {
   expected_drift: NIGPosterior;
   max_drift: NIGPosterior;
   sigma: NIGPosterior;
-  split_ratio: NIGPosterior;
 }
 
 export interface VEThresholdState {
@@ -300,9 +299,6 @@ export interface CalibrationParamsResponse {
   max_drift_moderate: number;
   max_drift_heavy: number;
   max_drift_severe: number;
-  split_ratio_moderate: number;
-  split_ratio_heavy: number;
-  split_ratio_severe: number;
   enabled: boolean;
   last_updated?: string | null;
 }

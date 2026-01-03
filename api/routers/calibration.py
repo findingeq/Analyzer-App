@@ -19,7 +19,7 @@ from ..models.schemas import (
 from ..models.enums import RunType, IntervalStatus
 from ..services.calibration import (
     CalibrationState,
-    update_calibration_from_interval,
+    update_calibration_from_run,
     apply_ve_threshold_approval,
     get_blended_params,
     enforce_ordinal_constraints,
@@ -119,9 +119,6 @@ def get_calibration_params(user_id: str = Query(..., description="User/device id
         max_drift_moderate=moderate_params['max_drift_pct'],
         max_drift_heavy=heavy_params['max_drift_pct'],
         max_drift_severe=severe_params['max_drift_pct'],
-        split_ratio_moderate=moderate_params['split_ratio'],
-        split_ratio_heavy=heavy_params['split_ratio'],
-        split_ratio_severe=severe_params['split_ratio'],
         enabled=state.enabled,
         last_updated=state.last_updated.isoformat() if state.last_updated else None
     )
@@ -142,41 +139,23 @@ def get_calibration_state(user_id: str = Query(..., description="User/device ide
 @router.post("/update", response_model=CalibrationUpdateResponse)
 def update_calibration(request: CalibrationUpdateRequest):
     """
-    Update calibration from analysis results.
+    Update calibration from analysis results using majority-based logic.
 
-    Called after each analysis run to update the ML model.
+    A run only counts toward calibration if:
+    1. More than 50% of qualifying intervals (≥6 min) share the same classification
+    2. The majority classification matches domain expectations
+
+    Each run counts as ONE calibration sample regardless of number of intervals.
     Returns a VE prompt if threshold change >= 1 L/min.
     """
     state = _load_calibration_state(request.user_id)
-    ve_prompt = None
 
-    for interval_result in request.interval_results:
-        # Extract required fields
-        interval_duration_min = (
-            interval_result.get('end_time', 0) - interval_result.get('start_time', 0)
-        ) / 60.0
-
-        # Get status as enum
-        status_str = interval_result.get('status', 'BORDERLINE')
-        if isinstance(status_str, str):
-            status = IntervalStatus(status_str)
-        else:
-            status = status_str
-
-        # Update calibration for this interval
-        state, prompt = update_calibration_from_interval(
-            state=state,
-            run_type=request.run_type,
-            interval_status=status,
-            interval_duration_min=interval_duration_min,
-            drift_pct=interval_result.get('ve_drift_pct', 0.0),
-            sigma_pct=interval_result.get('sigma_pct', 5.0),
-            avg_ve=interval_result.get('avg_ve', 60.0)
-        )
-
-        # Capture first VE prompt
-        if prompt and not ve_prompt:
-            ve_prompt = prompt
+    # Use majority-based calibration logic
+    state, ve_prompt = update_calibration_from_run(
+        state=state,
+        run_type=request.run_type,
+        interval_results=request.interval_results
+    )
 
     # Enforce ordinal constraints
     state = enforce_ordinal_constraints(state)
@@ -341,13 +320,11 @@ def set_advanced_params(request: AdvancedParamsRequest):
     state.heavy.expected_drift.mu = request.expected_drift_vt2
     state.heavy.max_drift.mu = request.max_drift_vt2
     state.heavy.sigma.mu = request.sigma_pct_vt2
-    state.heavy.split_ratio.mu = request.split_ratio_vt2
 
     # Update Severe domain (uses same values as Heavy for VT2)
     state.severe.expected_drift.mu = request.expected_drift_vt2
     state.severe.max_drift.mu = request.max_drift_vt2
     state.severe.sigma.mu = request.sigma_pct_vt2
-    state.severe.split_ratio.mu = request.split_ratio_vt2
 
     # Note: H multipliers are not stored in calibration state
     # They are passed directly in AnalysisParams from the frontend

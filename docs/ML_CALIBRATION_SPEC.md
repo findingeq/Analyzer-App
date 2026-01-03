@@ -78,10 +78,13 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 | Parameter | Moderate | Heavy | Severe | Ordinal Constraint |
 |-----------|----------|-------|--------|-------------------|
 | `expected_drift_pct` | ✓ | ✓ | ✓ | Moderate < Heavy < Severe |
-| `max_drift_pct` | ✓ | ✓ | — | Moderate < Heavy |
+| `max_drift_pct` | ✓ (derived) | ✓ (derived) | — | Derived from next domain |
 | `sigma_pct` | ✓ | ✓ | ✓ | **NONE** |
 
-**Note**: Both Moderate and Heavy domains use expected_drift and max_drift for classification. Severe calibrates expected_drift to inform Heavy's max_drift ceiling.
+**Note**:
+- Both Moderate and Heavy domains use expected_drift and max_drift for classification
+- Severe calibrates expected_drift to inform Heavy's max_drift ceiling
+- **max_drift is derived, not directly calibrated**: moderate.max_drift = heavy.expected_drift, heavy.max_drift = severe.expected_drift
 
 ### Global VE Thresholds:
 
@@ -124,11 +127,18 @@ The observed sigma is calculated as a percentage of baseline VE and fed into cal
 
 ## Drift/Sigma Calibration Logic
 
-### For Interval Runs (≥ 6 min intervals only):
-1. **Majority rule**: >50% of qualifying intervals must meet domain expectation
-2. **Selective calculation**: Only intervals meeting expectation contribute to parameter updates
-3. Borderline intervals excluded from calculations
-4. Intervals < 6 min excluded entirely
+### Run-Level Calibration with Majority Rule
+
+Each run (session) counts as **ONE calibration sample**, regardless of number of intervals. Multi-interval runs use majority-based logic:
+
+1. **Filter intervals**: Only intervals ≥ 6 minutes are considered
+2. **Majority check**: >50% of filtered intervals must share the same classification (ABOVE_THRESHOLD or BELOW_THRESHOLD)
+3. **If majority exists**:
+   - Calculate **averaged values** (drift_pct, sigma_pct, avg_ve) from majority intervals only
+   - Check if majority classification matches domain expectations
+   - If eligible: update posteriors with averaged values, increment run_count by 1
+4. **If no majority**: Run is excluded from calibration entirely (mixed results are too noisy)
+5. BORDERLINE intervals count toward denominator but never toward majority
 
 ### Domain-Specific Update Rules:
 
@@ -190,6 +200,14 @@ When an unexpected outcome occurs:
 ```
 anchored_mean = (anchor_κ × current_value + obs_κ × obs_mean) / (anchor_κ + obs_κ)
 ```
+
+### Multi-Interval Runs:
+
+For runs with multiple intervals, VE threshold calibration uses the same majority-based logic as drift/sigma calibration:
+
+1. **Majority classification** determines the run's overall classification
+2. **Averaged avg_ve** from majority intervals is used for unexpected outcome check
+3. Example: Moderate run with 4/7 intervals ABOVE_THRESHOLD → majority is ABOVE, use avg of those 4 intervals' avg_ve values
 
 ### User Approval/Rejection:
 - **Approve**: New value becomes the anchor; posterior resets to fresh state
@@ -258,7 +276,7 @@ Both actions reset the posterior, meaning future observations start fresh relati
 
 ```python
 class CalibrationState:
-    # Per-domain NIG posteriors (all domains have full parameter sets)
+    # Per-domain NIG posteriors
     moderate: DomainPosterior
     heavy: DomainPosterior
     severe: DomainPosterior
@@ -272,12 +290,12 @@ class CalibrationState:
 
     # Metadata
     last_updated: datetime
-    run_counts: Dict[str, int]  # qualifying runs per domain
+    run_counts: Dict[str, int]  # qualifying runs per domain (1 per run, not per interval)
 
 class DomainPosterior:
-    expected_drift: NIGPosterior
-    max_drift: NIGPosterior
-    sigma: NIGPosterior
+    expected_drift: NIGPosterior  # Calibrated from observations
+    max_drift: NIGPosterior       # Derived from next domain's expected_drift
+    sigma: NIGPosterior           # Calibrated from observations
 
 class VEThresholdState:
     current_value: float     # User-approved threshold (anchor)
@@ -618,3 +636,6 @@ Response:
 | 2026-01-03 | Updated expected_drift_pct for Moderate domain to 0.3%/min |
 | 2026-01-03 | Expanded sidebar sync: sigma, expected_drift, max_drift (all domains) |
 | 2026-01-03 | Both Moderate and Heavy now use expected_drift and max_drift thresholds |
+| 2026-01-03 | **Majority-based calibration**: Each run counts as ONE sample, not per-interval |
+| 2026-01-03 | Multi-interval runs require >50% majority classification to count for calibration |
+| 2026-01-03 | Averaged values from majority intervals used for calibration updates |
