@@ -670,8 +670,8 @@ def analyze_interval_ceiling(
         analysis_times = bin_times_rel[analysis_mask]
         analysis_ve = ve_binned[analysis_mask]
 
-        # Apply LOESS smoothing with frac=0.4 for gentle smoothing
-        loess_result = lowess(analysis_ve, analysis_times, frac=0.4)
+        # Apply LOESS smoothing with configurable frac for visual trend line
+        loess_result = lowess(analysis_ve, analysis_times, frac=params.loess_frac)
         slope_line_times_rel = loess_result[:, 0]
         slope_line_ve = loess_result[:, 1]
 

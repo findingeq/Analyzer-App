@@ -73,6 +73,8 @@ interface RunState {
     slopeModelMode: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
     // TESTING - Huber delta for regression smoothness (remove after selection)
     huberDelta: number;
+    // TESTING - LOESS smoothness for visual trend line (remove after selection)
+    loessFrac: number;
   };
 }
 
@@ -143,6 +145,8 @@ const defaultAdvancedParams = {
   slopeModelMode: "two_hinge" as const,
   // TESTING - Huber delta for regression smoothness (remove after selection)
   huberDelta: 5.0,
+  // TESTING - LOESS smoothness for visual trend line (remove after selection)
+  loessFrac: 0.4,
 };
 
 const initialState: RunState = {
