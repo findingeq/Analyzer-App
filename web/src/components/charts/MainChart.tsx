@@ -48,6 +48,8 @@ export function MainChart() {
     zoomEnd,
     setZoomRange,
     setSelectedInterval,
+    vt1Ceiling,
+    vt2Ceiling,
   } = useRunStore();
 
   // Ref to hold analysisResult for click handler (avoids stale closure)
@@ -274,7 +276,6 @@ export function MainChart() {
 
         const timeValues = result.chart_data.time_values;
         const cusumValues = result.chart_data.cusum_values;
-        const threshold = result.cusum_threshold;
         const transitions = result.cusum_transitions || [];
 
         // Build segments based on transitions (green = normal, orange = alarm)
@@ -364,24 +365,33 @@ export function MainChart() {
           }
         }
 
-        // Add threshold line for each interval
-        series.push({
-          name: "",
-          type: "line",
-          xAxisIndex: 0,
-          yAxisIndex: 1,
-          data: [
-            [timeValues[0], threshold],
-            [timeValues[timeValues.length - 1], threshold],
-          ],
-          showSymbol: false,
-          lineStyle: {
-            color: COLORS.cusumAlarm,
-            width: 1,
-            type: "dotted",
-          },
-          z: 3,
-        });
+      });
+    }
+
+    // Add VE ceiling line when ceiling-based analysis is used
+    const hasCeilingBasedAnalysis = results.some((r) => r.is_ceiling_based);
+    if (hasCeilingBasedAnalysis) {
+      const { run_type } = analysisResult;
+      const ceilingValue = run_type === "MODERATE" ? vt1Ceiling : vt2Ceiling;
+      const firstTime = results[0]?.chart_data.time_values[0] ?? 0;
+      const lastTime = results[results.length - 1]?.chart_data.time_values.slice(-1)[0] ?? 0;
+
+      series.push({
+        name: "",
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0, // VE axis (primary)
+        data: [
+          [firstTime, ceilingValue],
+          [lastTime, ceilingValue],
+        ],
+        showSymbol: false,
+        lineStyle: {
+          color: COLORS.cusumAlarm,
+          width: 1,
+          type: "dotted",
+        },
+        z: 3,
       });
     }
 
