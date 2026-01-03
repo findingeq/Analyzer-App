@@ -407,7 +407,7 @@ export function MainChart() {
     const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
 
     // =============================================================================
-    // VE Axis Scaling: VE LINE stays within 25-75% of chart height
+    // VE Axis Scaling: VE LINE stays within 20-80% of chart height
     // Use ve_binned (line data) for scaling, not ve_median (breath dots)
     // Breath dots may extend beyond but that's OK since they're faint
     // =============================================================================
@@ -415,37 +415,38 @@ export function MainChart() {
     const minVE = veBinnedValues.length > 0 ? Math.min(...veBinnedValues) : 0;
     const maxVE = veBinnedValues.length > 0 ? Math.max(...veBinnedValues) : 100;
     const veRange = maxVE - minVE || 1; // Avoid division by zero
-    // To place minVE at 25% and maxVE at 75%, axis range = 2x data range
-    const veAxisMin = Math.max(0, minVE - veRange * 0.5);
-    const veAxisMax = maxVE + veRange * 0.5;
+    // To place minVE at 20% and maxVE at 80%, axis range = data range / 0.6
+    // Buffer below = 20% of axis = dataRange * (20/60) = dataRange * 0.333
+    // Buffer above = 20% of axis = dataRange * (20/60) = dataRange * 0.333
+    const veAxisMin = Math.max(0, minVE - veRange * 0.333);
+    const veAxisMax = maxVE + veRange * 0.333;
 
     // =============================================================================
-    // CUSUM Axis Scaling: Data stays within bottom 1/3 of chart (0-33%)
+    // CUSUM Axis Scaling: Data stays within bottom 25% of chart (0-25%)
     // Axis ticks span bottom 50% of chart
-    // Within the bottom 50% axis, data occupies 0-66% (which is 0-33% of full chart)
+    // Within the bottom 50% axis, data occupies 0-50% (which is 0-25% of full chart)
     // =============================================================================
     const allCusumValues = results.flatMap((r) => r.chart_data.cusum_values);
     const allThresholds = results.map((r) => r.cusum_threshold);
     const maxCusumData = allCusumValues.length > 0
       ? Math.max(...allCusumValues, ...allThresholds, 1) // Min of 1 to avoid zero range
       : 100;
-    // To place data in bottom 66% of axis (0-33% of chart), extend max by 50%
+    // To place data in bottom 50% of axis (0-25% of chart), extend max by 100%
     const cusumAxisMin = 0;
-    const cusumAxisMax = maxCusumData * 1.5;
+    const cusumAxisMax = maxCusumData * 2;
 
     // =============================================================================
-    // HR Axis Scaling: Data stays within top 1/3 of chart (67-100%)
+    // HR Axis Scaling: Data stays within top 25% of chart (75-100%)
     // Axis ticks span top 50% of chart
-    // Within the top 50% axis, data occupies 34-100% (which is 67-100% of full chart)
+    // Within the top 50% axis, data occupies 50-100% (which is 75-100% of full chart)
     // =============================================================================
     const hrValues = hasHR ? breath_data.hr!.filter((v) => v != null && !isNaN(v)) : [];
     const minHR = hrValues.length > 0 ? Math.min(...hrValues) : 80;
     const maxHR = hrValues.length > 0 ? Math.max(...hrValues) : 180;
     const hrRange = maxHR - minHR || 1; // Avoid division by zero
     const hrPadding = Math.max(5, hrRange * 0.05);
-    // To place data in top 66% of axis (67-100% of chart), extend min downward
-    // Data should occupy 34-100% of axis, so axis min = minHR - (hrRange / 0.66) * 0.34
-    const hrAxisMin = minHR - hrPadding - hrRange * 0.5;
+    // To place data in top 50% of axis (75-100% of chart), extend min downward by data range
+    const hrAxisMin = minHR - hrPadding - hrRange;
     const hrAxisMax = maxHR + hrPadding;
 
     return {
@@ -560,19 +561,19 @@ export function MainChart() {
           top: 50,
           bottom: 80,
         },
-        // Grid 1: Top grid for HR axis (top 50%)
+        // Grid 1: Top grid for HR axis (top 50% - from top to middle)
         {
           left: 60,
           right: 70,
           top: 50,
-          height: "50%",
+          bottom: "52%", // Ends at 52% from bottom (top half)
         },
-        // Grid 2: Bottom grid for CUSUM axis (bottom 50%)
+        // Grid 2: Bottom grid for CUSUM axis (bottom 50% - from middle to bottom)
         {
           left: 60,
           right: 70,
+          top: "52%", // Starts at 52% from top (bottom half)
           bottom: 80,
-          height: "50%",
         },
       ],
       xAxis: [
@@ -626,7 +627,7 @@ export function MainChart() {
       ],
       yAxis: [
         // yAxis 0: VE axis (main grid, left side, full height)
-        // Data scaled to appear in 25-75% of chart
+        // Data scaled to appear in 20-80% of chart
         {
           type: "value",
           gridIndex: 0,
@@ -652,7 +653,7 @@ export function MainChart() {
           },
         },
         // yAxis 1: CUSUM axis (bottom grid, right side)
-        // Data scaled to appear in bottom 1/3 of chart
+        // Data scaled to appear in bottom 25% of chart
         {
           type: "value",
           gridIndex: 2,
@@ -677,7 +678,7 @@ export function MainChart() {
           },
         },
         // yAxis 2: HR axis (top grid, right side)
-        // Data scaled to appear in top 1/3 of chart
+        // Data scaled to appear in top 25% of chart
         {
           type: "value",
           gridIndex: 1,
