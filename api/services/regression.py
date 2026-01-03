@@ -332,3 +332,218 @@ def fit_second_hinge(
         final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
 
     return tau, b0, b1, b2, final_loss, detection_succeeded
+
+
+# ============================================================================
+# TESTING FUNCTIONS - Remove after slope model selection
+# ============================================================================
+
+def _huber_loss_hinge_constrained(params_opt, t_arr, ve_arr, delta=5.0):
+    """
+    Huber loss for piecewise linear hinge model with constraint: slope2 >= slope1.
+
+    This enforces that the second segment slope cannot decrease (physiologically,
+    VE drift should be monotonic - flat, rising, or accelerating, not reversing).
+    """
+    tau, b0, b1, b2 = params_opt
+    pred = b0 + b1 * t_arr + b2 * np.maximum(0, t_arr - tau)
+    residuals = ve_arr - pred
+    abs_res = np.abs(residuals)
+    loss = np.where(
+        abs_res <= delta,
+        0.5 * residuals**2,
+        delta * (abs_res - 0.5 * delta)
+    )
+    base_loss = np.sum(loss)
+
+    # Penalty if b2 < 0 (i.e., slope2 < slope1, meaning slope decreases)
+    # Large penalty to prevent the optimizer from choosing negative b2
+    if b2 < 0:
+        base_loss += 1e6 * (b2 ** 2)
+
+    return base_loss
+
+
+def fit_second_hinge_constrained(
+    t: np.ndarray,
+    ve: np.ndarray,
+    phase3_onset: float,
+    interval_end: float
+) -> Tuple[float, float, float, float, float, bool]:
+    """
+    Fit a second hinge model with constraint: slope2 >= slope1 (no slope reversal).
+
+    TESTING FUNCTION - Remove after slope model selection.
+
+    This prevents the physiologically implausible "up then down" pattern
+    where slope decreases after the second hinge.
+
+    Args:
+        t: Time values (seconds relative to interval start)
+        ve: VE values (L/min)
+        phase3_onset: Detected Phase III onset time (relative to interval)
+        interval_end: End time of interval (relative to interval start)
+
+    Returns:
+        Tuple of (tau2, beta0, beta1, beta2, loss, detection_succeeded)
+    """
+    tau_min = phase3_onset + 120.0
+    tau_max = interval_end - 120.0
+    midpoint_fallback = (phase3_onset + interval_end) / 2.0
+
+    def _fit_coefficients_for_tau(tau_val, t_arr, ve_arr):
+        mask_before = t_arr < tau_val
+        mask_after = t_arr >= tau_val
+
+        if np.sum(mask_before) >= 2 and np.sum(mask_after) >= 2:
+            t_before = t_arr[mask_before]
+            ve_before = ve_arr[mask_before]
+            b1 = (ve_before[-1] - ve_before[0]) / (t_before[-1] - t_before[0]) if (t_before[-1] - t_before[0]) > 0 else 0
+            b0 = ve_before[0] - b1 * t_before[0]
+
+            t_after = t_arr[mask_after]
+            ve_after = ve_arr[mask_after]
+            slope_after = (ve_after[-1] - ve_after[0]) / (t_after[-1] - t_after[0]) if (t_after[-1] - t_after[0]) > 0 else 0
+            b2 = max(0, slope_after - b1)  # Constrain b2 >= 0
+        else:
+            b1 = (ve_arr[-1] - ve_arr[0]) / (t_arr[-1] - t_arr[0]) if (t_arr[-1] - t_arr[0]) > 0 else 0
+            b0 = ve_arr[0] - b1 * t_arr[0]
+            b2 = 0
+
+        return b0, b1, b2
+
+    if tau_max <= tau_min:
+        tau = midpoint_fallback
+        b0, b1, b2 = _fit_coefficients_for_tau(tau, t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+        return tau, b0, b1, b2, final_loss, False
+
+    window_midpoint = (tau_min + tau_max) / 2.0
+    t_min = t[0]
+    t_max = t[-1]
+    tau_min = max(tau_min, t_min + 10)
+    tau_max = min(tau_max, t_max - 10)
+
+    if tau_max <= tau_min:
+        tau = window_midpoint
+        b0, b1, b2 = _fit_coefficients_for_tau(tau, t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+        return tau, b0, b1, b2, final_loss, False
+
+    tau_init = (tau_min + tau_max) / 2
+
+    if len(t) >= 2:
+        b1_init = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
+        b0_init = ve[0] - b1_init * t[0]
+    else:
+        b0_init = np.mean(ve)
+        b1_init = 0
+    b2_init = max(0, 0.001)  # Start with small positive b2
+
+    initial_params = [tau_init, b0_init, b1_init, b2_init]
+
+    bounds = [
+        (tau_min, tau_max),
+        (None, None),
+        (None, None),
+        (0, None),  # Constrain b2 >= 0 (slope cannot decrease)
+    ]
+
+    detection_succeeded = True
+
+    try:
+        result = minimize(
+            _huber_loss_hinge_constrained,
+            initial_params,
+            args=(t, ve),
+            method='L-BFGS-B',
+            bounds=bounds,
+            options={'maxiter': 1000}
+        )
+        tau, b0, b1, b2 = result.x
+        final_loss = result.fun
+
+        if abs(tau - tau_min) < 1.0 or abs(tau - tau_max) < 1.0:
+            detection_succeeded = False
+            tau = window_midpoint
+            b0, b1, b2 = _fit_coefficients_for_tau(tau, t, ve)
+            final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+
+    except Exception:
+        detection_succeeded = False
+        tau = window_midpoint
+        b0, b1, b2 = _fit_coefficients_for_tau(tau, t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+
+    return tau, b0, b1, b2, final_loss, detection_succeeded
+
+
+def _huber_loss_quadratic(params, t_arr, ve_arr, delta=5.0):
+    """Huber loss for quadratic regression."""
+    a, b, c = params  # VE = a + b*t + c*t^2
+    pred = a + b * t_arr + c * t_arr ** 2
+    residuals = ve_arr - pred
+    abs_res = np.abs(residuals)
+    loss = np.where(
+        abs_res <= delta,
+        0.5 * residuals**2,
+        delta * (abs_res - 0.5 * delta)
+    )
+    return np.sum(loss)
+
+
+def fit_quadratic_slope(
+    t: np.ndarray,
+    ve: np.ndarray,
+    phase3_onset: float
+) -> Tuple[float, float, float, bool]:
+    """
+    Fit a quadratic curve to capture gradual acceleration of VE drift.
+
+    TESTING FUNCTION - Remove after slope model selection.
+
+    Model: VE(t) = a + b*t + c*t^2
+
+    The quadratic term (c) captures acceleration:
+    - c > 0: VE drift accelerates (slow component developing)
+    - c ≈ 0: Linear drift (no acceleration)
+    - c < 0: VE drift decelerates (unlikely physiologically)
+
+    Args:
+        t: Time values (seconds relative to interval start)
+        ve: VE values (L/min)
+        phase3_onset: Phase III onset time for reference
+
+    Returns:
+        Tuple of (a, b, c, fit_succeeded) where:
+        - a: Intercept
+        - b: Linear coefficient (initial slope in units/sec)
+        - c: Quadratic coefficient (acceleration in units/sec^2)
+        - fit_succeeded: Whether optimization converged
+    """
+    if len(t) < 3:
+        return np.mean(ve), 0.0, 0.0, False
+
+    # Initial guesses
+    a_init = ve[0]
+    b_init = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
+    c_init = 0.0
+
+    initial_params = [a_init, b_init, c_init]
+
+    fit_succeeded = True
+
+    try:
+        result = minimize(
+            _huber_loss_quadratic,
+            initial_params,
+            args=(t, ve),
+            method='L-BFGS-B',
+            options={'maxiter': 1000}
+        )
+        a, b, c = result.x
+    except Exception:
+        fit_succeeded = False
+        a, b, c = a_init, b_init, c_init
+
+    return a, b, c, fit_succeeded

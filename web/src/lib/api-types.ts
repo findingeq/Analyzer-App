@@ -73,6 +73,9 @@ export interface AnalysisParams {
   vt2_ve_ceiling?: number;
   use_thresholds_for_all?: boolean;
   ceiling_warmup_sec?: number;
+
+  // TESTING - Slope model mode for Heavy/Severe (remove after selection)
+  slope_model_mode?: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
 }
 
 // =============================================================================

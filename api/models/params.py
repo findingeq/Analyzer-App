@@ -101,6 +101,13 @@ class AnalysisParams(BaseModel):
         description="Hampel filter sigma threshold"
     )
 
+    # Slope model mode for Heavy/Severe intervals (TESTING - remove after selection)
+    # Options: "single_slope", "two_hinge", "two_hinge_constrained", "quadratic"
+    slope_model_mode: str = Field(
+        default="two_hinge",
+        description="Slope model for Heavy/Severe: single_slope, two_hinge, two_hinge_constrained, quadratic"
+    )
+
     # Ceiling-based analysis parameters
     vt1_ve_ceiling: float = Field(
         default=100.0,
