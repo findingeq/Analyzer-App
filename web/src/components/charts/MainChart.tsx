@@ -407,11 +407,13 @@ export function MainChart() {
     const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
 
     // =============================================================================
-    // VE Axis Scaling: Data stays within 25-75% of chart height
+    // VE Axis Scaling: VE LINE stays within 25-75% of chart height
+    // Use ve_binned (line data) for scaling, not ve_median (breath dots)
+    // Breath dots may extend beyond but that's OK since they're faint
     // =============================================================================
-    const veValues = breath_data.ve_median.filter((v) => v != null && !isNaN(v));
-    const minVE = veValues.length > 0 ? Math.min(...veValues) : 0;
-    const maxVE = veValues.length > 0 ? Math.max(...veValues) : 100;
+    const veBinnedValues = breath_data.ve_binned.filter((v) => v != null && !isNaN(v));
+    const minVE = veBinnedValues.length > 0 ? Math.min(...veBinnedValues) : 0;
+    const maxVE = veBinnedValues.length > 0 ? Math.max(...veBinnedValues) : 100;
     const veRange = maxVE - minVE || 1; // Avoid division by zero
     // To place minVE at 25% and maxVE at 75%, axis range = 2x data range
     const veAxisMin = Math.max(0, minVE - veRange * 0.5);
@@ -563,14 +565,14 @@ export function MainChart() {
           left: 60,
           right: 70,
           top: 50,
-          height: "35%",
+          height: "50%",
         },
         // Grid 2: Bottom grid for CUSUM axis (bottom 50%)
         {
           left: 60,
           right: 70,
           bottom: 80,
-          height: "35%",
+          height: "50%",
         },
       ],
       xAxis: [
