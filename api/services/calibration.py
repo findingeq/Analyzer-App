@@ -562,15 +562,16 @@ def update_calibration_from_interval(
         domain.expected_drift = update_nig_posterior(domain.expected_drift, drift_pct, lambda_)
         domain.sigma = update_nig_posterior(domain.sigma, sigma_pct, lambda_)
 
-        # Cross-domain max_drift calibration (only for Heavy domain)
-        # Severe's expected_drift becomes Heavy's ceiling
-        # Note: Moderate no longer uses max_drift in classification
-        if run_type == RunType.SEVERE:
-            heavy_domain = state.get_domain_posterior(RunType.HEAVY)
-            severe_expected = domain.expected_drift.get_point_estimate()
-            heavy_domain.max_drift = update_nig_posterior(
-                heavy_domain.max_drift, severe_expected, lambda_
-            )
+        # Update split_ratio only for Heavy (not Moderate or Severe)
+        # Moderate doesn't use split_ratio in classification
+        # Severe doesn't have a max_drift ceiling to inform
+        if run_type == RunType.HEAVY:
+            if split_ratio is not None and split_ratio > 0:
+                domain.split_ratio = update_nig_posterior(domain.split_ratio, split_ratio, lambda_)
+
+        # Note: max_drift values are derived from expected_drift in enforce_ordinal_constraints
+        # - moderate.max_drift = heavy.expected_drift
+        # - heavy.max_drift = severe.expected_drift
 
         # Increment qualifying run count
         state.increment_run_count(run_type)
@@ -733,12 +734,11 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
         state.heavy.expected_drift.mu = avg - 0.1
         state.severe.expected_drift.mu = avg + 0.1
 
-    # Enforce max_drift ordering (Heavy < Severe only)
-    # Note: Moderate doesn't use max_drift in classification, so skip it
-    if heavy_max >= severe_max:
-        avg = (heavy_max + severe_max) / 2
-        state.heavy.max_drift.mu = avg - 0.1
-        state.severe.max_drift.mu = avg + 0.1
+    # Derive max_drift values from the next domain's expected_drift
+    # Moderate's ceiling = Heavy's expected (where heavy domain starts)
+    # Heavy's ceiling = Severe's expected (where severe domain starts)
+    state.moderate.max_drift.mu = state.heavy.expected_drift.get_point_estimate()
+    state.heavy.max_drift.mu = state.severe.expected_drift.get_point_estimate()
 
     # Enforce VT1 < VT2
     if state.vt1_ve.current_value >= state.vt2_ve.current_value:
