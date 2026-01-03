@@ -1,7 +1,7 @@
 # ML Calibration System - Implementation Specification
 
 > **Status**: Implemented
-> **Last Updated**: 2026-01-02
+> **Last Updated**: 2026-01-03
 
 ---
 
@@ -78,11 +78,10 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 | Parameter | Moderate | Heavy | Severe | Ordinal Constraint |
 |-----------|----------|-------|--------|-------------------|
 | `expected_drift_pct` | ✓ | ✓ | ✓ | Moderate < Heavy < Severe |
-| `max_drift_pct` | — | ✓ | — | Heavy only |
+| `max_drift_pct` | ✓ | ✓ | — | Moderate < Heavy |
 | `sigma_pct` | ✓ | ✓ | ✓ | **NONE** |
-| `split_ratio` | — | ✓ | — | Heavy only |
 
-**Note**: Moderate domain classification uses only expected_drift (0.3%/min), not max_drift or split_ratio. Severe calibrates expected_drift to inform Heavy's max_drift ceiling.
+**Note**: Both Moderate and Heavy domains use expected_drift and max_drift for classification. Severe calibrates expected_drift to inform Heavy's max_drift ceiling.
 
 ### Global VE Thresholds:
 
@@ -95,10 +94,9 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 
 | Parameter | Moderate | Heavy | Severe |
 |-----------|----------|-------|--------|
-| `expected_drift_pct` | 0.5 | 1.0 | 2.0 |
-| `max_drift_pct` | 2.0 | 3.0 | 5.0 |
+| `expected_drift_pct` | 0.3 | 1.0 | 2.0 |
+| `max_drift_pct` | 1.0 | 3.0 | 5.0 |
 | `sigma_pct` | 7.0 | 4.0 | 4.0 |
-| `split_ratio` | 1.0 | 1.2 | 1.2 |
 
 ---
 
@@ -124,7 +122,7 @@ The observed sigma is calculated as a percentage of baseline VE and fed into cal
 
 ---
 
-## Drift/Sigma/Split Calibration Logic
+## Drift/Sigma Calibration Logic
 
 ### For Interval Runs (≥ 6 min intervals only):
 1. **Majority rule**: >50% of qualifying intervals must meet domain expectation
@@ -136,32 +134,26 @@ The observed sigma is calculated as a percentage of baseline VE and fed into cal
 
 | Run Domain | Expected Outcome | Parameters Updated |
 |------------|------------------|-------------------|
-| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, sigma only |
-| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, sigma, split_ratio |
-| **Severe** | ABOVE_THRESHOLD | Severe: expected_drift, sigma only; **Heavy: max_drift** |
+| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, max_drift, sigma |
+| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, max_drift, sigma |
+| **Severe** | ABOVE_THRESHOLD | Severe: expected_drift, sigma; **Heavy: max_drift** |
 
 ### Cross-Domain max_drift Calibration:
 
-Only Heavy domain uses max_drift for classification:
+Heavy domain's max_drift is informed by Severe's expected_drift:
 
 - **max_drift_heavy** ← Severe's expected_drift (if you drift like Severe, you're above VT2)
 
-**Note**: Moderate domain no longer uses max_drift. Classification is based solely on expected_drift (0.3%/min). The physiological rationale:
-1. True moderate exercise (below VT1) has virtually no VO2 drift
-2. Any drift exceeding expected indicates the runner is not in moderate domain
-3. The VO2 slow component in heavy domain plateaus after 6-10 minutes, so split_ratio adds no diagnostic value for "mistaken moderate" runs
-
 ### Severe Domain Specifics:
 
-Severe runs only calibrate **expected_drift** and **sigma** (not split_ratio or max_drift):
+Severe runs only calibrate **expected_drift** and **sigma** (not max_drift):
 - **expected_drift**: Used to set Heavy's max_drift ceiling
 - **sigma**: Used for CUSUM sensitivity in Severe runs
-- **split_ratio**: Not calibrated (Severe doesn't use split analysis for classification)
 - **max_drift**: Not needed (no domain above Severe)
 
 ### Domain Isolation (No Cross-Pollination):
 
-Domain models are kept pure for expected_drift, sigma, and split_ratio. If a Severe run unexpectedly shows low drift, this triggers VT2 threshold adjustment, not Heavy parameter updates.
+Domain models are kept pure for expected_drift and sigma. If a Severe run unexpectedly shows low drift, this triggers VT2 threshold adjustment, not Heavy parameter updates.
 
 **Rationale**: Heavy domain behavior is concave (drift stabilizes), while Severe is convex (drift accelerates). Cross-pollination would corrupt domain-specific drift shapes.
 
@@ -230,7 +222,6 @@ Both actions reset the posterior, meaning future observations start fresh relati
      - Sigma % (VT1=Moderate, VT2=Heavy)
      - Expected Drift % (VT1=Moderate, VT2=Heavy)
      - Max Drift % (VT1=Moderate, VT2=Heavy)
-     - Split Ratio (VT1=Moderate, VT2=Heavy)
    - User can manually adjust values for specific run analysis
    - Changes are local until explicitly synced
 
@@ -287,7 +278,6 @@ class DomainPosterior:
     expected_drift: NIGPosterior
     max_drift: NIGPosterior
     sigma: NIGPosterior
-    split_ratio: NIGPosterior
 
 class VEThresholdState:
     current_value: float     # User-approved threshold (anchor)
@@ -327,7 +317,7 @@ When running analysis:
 3. Blend calibrated values with defaults based on run count
 4. Use blended parameters for CUSUM analysis
 5. After classification:
-   - Check if outcome triggers drift/sigma/split calibration (domain-specific only)
+   - Check if outcome triggers drift/sigma calibration (domain-specific only)
    - Check if outcome triggers VE threshold calibration
    - Apply forgetting factor to posteriors, then update
    - Check if VE threshold change ≥ ±1 L/min for user prompt
@@ -581,17 +571,14 @@ Response:
   "sigma_pct_moderate": 7.0,
   "sigma_pct_heavy": 4.0,
   "sigma_pct_severe": 4.0,
-  "expected_drift_moderate": 0.5,
+  "expected_drift_moderate": 0.3,
   "expected_drift_heavy": 1.0,
   "expected_drift_severe": 2.0,
   "max_drift_moderate": 1.0,
-  "max_drift_heavy": 2.0,
+  "max_drift_heavy": 3.0,
   "max_drift_severe": 5.0,
-  "split_ratio_moderate": 1.0,
-  "split_ratio_heavy": 1.2,
-  "split_ratio_severe": 1.2,
   "enabled": true,
-  "last_updated": "2026-01-02T12:00:00Z"
+  "last_updated": "2026-01-03T12:00:00Z"
 }
 ```
 
@@ -625,10 +612,9 @@ Response:
 | 2026-01-02 | Added "Sync to Calibration" and "Restore to Last Calibration" buttons |
 | 2026-01-02 | Added MADSD (MAD of Successive Differences) for sigma calculation from actual data |
 | 2026-01-02 | Updated sigma defaults: Moderate=7%, Heavy/Severe=4% (domain-specific) |
-| 2026-01-02 | Implemented cross-domain max_drift calibration (Heavy→Moderate, Severe→Heavy) |
-| 2026-01-02 | Severe runs now only calibrate expected_drift and sigma (not split_ratio) |
-| 2026-01-02 | Updated split_ratio defaults: Moderate=1.0, Heavy=1.2, Severe=1.2 |
-| 2026-01-02 | Expanded sidebar sync to include all advanced params (sigma, drift, max_drift, split_ratio) |
-| 2026-01-02 | Added split_ratio inputs to sidebar Advanced section |
-| 2026-01-02 | Moderate domain now only calibrates expected_drift and sigma (not max_drift or split_ratio) |
-| 2026-01-02 | Removed cross-domain max_drift calibration from Heavy→Moderate (Moderate classification uses only expected_drift) |
+| 2026-01-02 | Implemented cross-domain max_drift calibration (Severe→Heavy) |
+| 2026-01-03 | Removed split_ratio from all calibration and classification logic |
+| 2026-01-03 | Added max_drift_pct for Moderate domain (1.0%/min default) |
+| 2026-01-03 | Updated expected_drift_pct for Moderate domain to 0.3%/min |
+| 2026-01-03 | Expanded sidebar sync: sigma, expected_drift, max_drift (all domains) |
+| 2026-01-03 | Both Moderate and Heavy now use expected_drift and max_drift thresholds |

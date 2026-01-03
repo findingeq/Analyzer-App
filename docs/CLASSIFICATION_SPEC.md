@@ -1,7 +1,7 @@
 # Classification Specification
 
 > **Status**: Implemented
-> **Last Updated**: 2026-01-02
+> **Last Updated**: 2026-01-03
 
 ---
 
@@ -108,7 +108,23 @@ Sᵢ = max(0, Sᵢ₋₁ + (VE_observed[i] - VE_expected[i]) - k)
 
 **Alarm condition**: `Sᵢ > h`
 
-**Recovery condition**: Alarm triggered AND `S_final ≤ h/2`
+**Recovery condition**: `Sᵢ ≤ h/2` (after alarm was triggered)
+
+### CUSUM State Transitions
+
+The CUSUM can transition between states multiple times within an interval:
+
+| State | Condition | Line Color |
+|-------|-----------|------------|
+| Normal | `S ≤ h` (never triggered or recovered) | Green |
+| Alarm | `S > h` | Orange |
+| Recovered | `S ≤ h/2` (after alarm) | Green |
+
+**Transition tracking**: Each alarm trigger and recovery is recorded with a timestamp, allowing multiple green→orange→green transitions to be visualized.
+
+**Final state determination**:
+- `cusum_recovered = TRUE` if alarm was triggered AND ended in Normal/Recovered state
+- `cusum_recovered = FALSE` if alarm was triggered AND ended in Alarm state
 
 ### Ceiling-based CUSUM (Absolute threshold)
 
@@ -135,21 +151,15 @@ Sᵢ = max(0, Sᵢ₋₁ + (VE_observed[i] - ceiling_ve) - k)
 | `h_multiplier` | 5.0 | 5.0 |
 | `sigma_pct` | 7.0% | 4.0% |
 | `expected_drift_pct` | 0.3%/min | 1.0%/min |
-| `max_drift_pct` | N/A | 3.0%/min |
-| `split_ratio_threshold` | N/A | 1.2 |
-
-**Note**: Moderate domain uses only `expected_drift_pct` for classification. The `max_drift_pct` and `split_ratio_threshold` are not used because:
-1. True moderate exercise (below VT1) has virtually no drift
-2. If drift exceeds expected (0.3%/min), runner is likely in heavy domain
-3. In heavy domain, the VO2 slow component plateaus after 6-10 minutes, so split slope ratio adds no diagnostic value
+| `max_drift_pct` | 1.0%/min | 3.0%/min |
 
 ---
 
 ## Slope Calculation
 
-### Single Slope (Overall Drift)
+### Single Slope Model (All Domains)
 
-Fitted using **Huber regression** (robust to outliers) on post-calibration data.
+All domains use a **single slope** model fitted using **Huber regression** (robust to outliers) on post-calibration data.
 
 **Model**:
 ```
@@ -164,46 +174,13 @@ L(r) = {
 }
 ```
 
-Where `δ = 5.0` (Huber delta parameter)
+Where `δ = 5.0` (Huber delta parameter, configurable in Advanced settings)
 
 **Output**:
 - `slope`: VE change per minute (L/min per minute)
 - `slope_pct`: `(slope / cal_ve_mean) × 100` (% per minute)
 
-**Used by**: All domains (Moderate, Heavy, Severe)
-
-### Split Slope (Two-Segment) — Heavy/Severe Only
-
-Detects slope change within Phase III using a **second hinge model**.
-
-**Not used for Moderate domain** because:
-- Moderate exercise has minimal drift (steady state)
-- Heavy domain VO2 slow component plateaus after 6-10 minutes
-- Split slope ratio on small numbers is noisy and unreliable
-
-**Constraint window**:
-- Start: Phase III onset + 120 seconds
-- End: Interval end - 120 seconds
-- Fallback: Midpoint between Phase III onset and interval end
-
-**Model**:
-```
-VE(t) = β₀ + β₁·t + β₂·max(0, t - τ₂)
-```
-
-Where:
-- `τ₂` = Second hinge point (slope change time)
-- `β₁` = Slope of segment 1 (early Phase III)
-- `β₁ + β₂` = Slope of segment 2 (late Phase III)
-
-**Outputs**:
-- `slope1_pct`: First segment slope as % of baseline per minute
-- `slope2_pct`: Second segment slope as % of baseline per minute
-- `split_slope_ratio`: `slope2_pct / slope1_pct`
-
-**Split ratio bounds**:
-- If |slope1_pct| < 0.1%: Use minimum denominator of 0.1%
-- Maximum ratio capped at 5.0
+**Visualization**: The slope line is anchored at Phase III onset (visual continuity) but the slope value is calculated from post-calibration data.
 
 ---
 
@@ -212,83 +189,73 @@ Where:
 ### Moderate Domain (VT1) Classification
 
 **Inputs**:
-- `cusum_alarm`: Did CUSUM exceed threshold h?
-- `cusum_recovered`: Did CUSUM return below h/2?
+- `sustained_alarm`: CUSUM triggered AND NOT recovered
 - `overall_slope_pct`: Total drift rate (%/min)
 
-**Threshold**:
-- `drift_threshold` = expected_drift_pct (0.3%/min default)
+**Thresholds** (from cloud calibration):
+- `low_threshold` = expected_drift_pct (0.3%/min default)
+- `high_threshold` = max_drift_pct (1.0%/min default)
 
 **Decision Tree**:
 
 ```
-IF (cusum_alarm = FALSE) OR (cusum_recovered = TRUE):
+IF (sustained_alarm = FALSE):
+│   (No cusum alarm OR cusum recovered)
 │
-├── IF overall_slope_pct < drift_threshold:
-│   └── BELOW_THRESHOLD
+├── IF overall_slope_pct < low_threshold:
+│   └── BELOW_THRESHOLD (green)
 │
-└── ELSE:
-    └── BORDERLINE
+├── ELSE IF overall_slope_pct < high_threshold:
+│   └── BORDERLINE (yellow)
+│
+└── ELSE (slope ≥ high_threshold):
+    └── ABOVE_THRESHOLD (red)
 
-ELSE (cusum_alarm = TRUE AND cusum_recovered = FALSE):
+ELSE (sustained_alarm = TRUE):
+│   (Cusum triggered AND NOT recovered)
 │
-├── IF overall_slope_pct < drift_threshold:
-│   └── BORDERLINE
+├── IF overall_slope_pct < low_threshold:
+│   └── BORDERLINE (yellow)
 │
-└── ELSE:
-    └── ABOVE_THRESHOLD
+└── ELSE (slope ≥ low_threshold):
+    └── ABOVE_THRESHOLD (red)
 ```
-
-**Rationale**: Moderate domain classification is simplified because:
-- True moderate exercise has virtually no VO2 drift
-- Any drift exceeding 0.3%/min suggests runner is not in moderate domain
-- No need for max_drift or split_ratio checks
 
 ---
 
 ### Heavy/Severe Domain (VT2) Classification
 
 **Inputs**:
-- `cusum_alarm`: Did CUSUM exceed threshold h?
-- `cusum_recovered`: Did CUSUM return below h/2?
+- `sustained_alarm`: CUSUM triggered AND NOT recovered
 - `overall_slope_pct`: Total drift rate (%/min)
-- `split_slope_ratio`: Ratio of segment 2 to segment 1 slopes
 
-**Thresholds**:
+**Thresholds** (from cloud calibration):
 - `low_threshold` = expected_drift_pct (1.0%/min default)
 - `high_threshold` = max_drift_pct (3.0%/min default)
-- `split_ratio_threshold` = 1.2
 
 **Decision Tree**:
 
 ```
-IF (cusum_alarm = FALSE) OR (cusum_recovered = TRUE):
+IF (sustained_alarm = FALSE):
+│   (No cusum alarm OR cusum recovered)
 │
 ├── IF overall_slope_pct < low_threshold:
-│   └── BELOW_THRESHOLD
+│   └── BELOW_THRESHOLD (green)
 │
 ├── ELSE IF overall_slope_pct < high_threshold:
-│   ├── IF split_slope_ratio < split_ratio_threshold:
-│   │   └── BELOW_THRESHOLD
-│   └── ELSE:
-│       └── BORDERLINE
+│   └── BORDERLINE (yellow)
 │
 └── ELSE (slope ≥ high_threshold):
-    └── BORDERLINE
+    └── ABOVE_THRESHOLD (red)
 
-ELSE (cusum_alarm = TRUE AND cusum_recovered = FALSE):
+ELSE (sustained_alarm = TRUE):
+│   (Cusum triggered AND NOT recovered)
 │
 ├── IF overall_slope_pct < low_threshold:
-│   └── BORDERLINE
+│   └── BORDERLINE (yellow)
 │
-├── ELSE IF overall_slope_pct < high_threshold:
-│   ├── IF split_slope_ratio < split_ratio_threshold:
-│   │   └── BORDERLINE
-│   └── ELSE:
-│       └── ABOVE_THRESHOLD
-│
-└── ELSE (slope ≥ high_threshold):
-    └── ABOVE_THRESHOLD
+└── ELSE (slope ≥ low_threshold):
+    └── ABOVE_THRESHOLD (red)
 ```
 
 ### Ceiling-based Analysis Classification
@@ -311,22 +278,11 @@ ELSE (cusum_alarm = TRUE AND cusum_recovered = FALSE):
 
 ### Why Three-Way Classification?
 
-| Status | Meaning | Calibration Impact |
-|--------|---------|-------------------|
-| BELOW_THRESHOLD | VE stable, within expected bounds | Updates domain parameters |
-| BORDERLINE | Inconclusive - some indicators elevated | Excluded from calibration |
-| ABOVE_THRESHOLD | Clear drift detected | May trigger VE threshold update |
-
-### Why Split Slope Ratio? (Heavy/Severe Only)
-
-Distinguishes between:
-- **Stable drift** (ratio ≈ 1.0): Constant slow drift throughout
-- **Accelerating drift** (ratio > 1.2): Slope increases in second half
-- **Decelerating drift** (ratio < 1.0): Slope decreases (fatigue response)
-
-Accelerating drift is more indicative of exceeding threshold.
-
-**Not used for Moderate domain** because the VO2 slow component in heavy domain plateaus after 6-10 minutes, so an accelerating slope pattern in a "moderate" run would indicate severe domain, not heavy. The expected_drift threshold alone is sufficient for moderate classification.
+| Status | Color | Meaning | Calibration Impact |
+|--------|-------|---------|-------------------|
+| BELOW_THRESHOLD | Green | VE stable, within expected bounds | Updates domain parameters |
+| BORDERLINE | Yellow | Inconclusive - some indicators elevated | Excluded from calibration |
+| ABOVE_THRESHOLD | Red | Clear drift detected | May trigger VE threshold update |
 
 ### Why CUSUM Recovery Matters?
 
@@ -349,12 +305,9 @@ A recovered CUSUM indicates:
 | `final_cusum` | CUSUM value at interval end |
 | `cusum_threshold` | The h threshold used |
 | `alarm_time` | Time when CUSUM first exceeded h (if any) |
-| `cusum_recovered` | Whether CUSUM dropped below h/2 |
-| `slope1_pct` | First segment slope (%/min) |
-| `slope2_pct` | Second segment slope (%/min) |
-| `split_slope_ratio` | slope2 / slope1 |
+| `cusum_recovered` | Whether CUSUM ended in recovered state |
+| `cusum_transitions` | Array of {time, is_alarm} for all state changes |
 | `phase3_onset_rel` | Phase III onset time (seconds from interval start) |
-| `hinge2_time_rel` | Second hinge time (seconds from interval start) |
 | `is_ceiling_based` | Whether ceiling-based analysis was used |
 | `is_segmented` | Whether segmented analysis was used |
 | `observed_sigma_pct` | MADSD-calculated noise level |
@@ -369,13 +322,40 @@ A recovered CUSUM indicates:
 |---------|--------|-------------|
 | VE binned line | Post-filtering | Filtered VE over time (with gradient) |
 | Breath dots | Post-median only | Individual breath values |
-| Segment 1 line | Hinge model | Phase I+II (ramp-up) slope |
-| Segment 2 line | Overall slope (Moderate) or Second hinge (Heavy/Severe) | Phase III slope |
-| Segment 3 line | Second hinge (Heavy/Severe only) | Late Phase III slope |
-| CUSUM line | Accumulation | Green until alarm, red after |
+| Slope line (Segment 1) | Hinge model | Phase II (ramp-up) from start to Phase III onset |
+| Slope line (Segment 2) | Single slope | Phase III drift from Phase III onset to interval end |
+| CUSUM line | Accumulation | Multi-segment: green (normal) ↔ orange (alarm) |
 | Interval shading | Classification | Green/yellow/red background |
 
-**Note**: Moderate runs display only Segment 1 (ramp) and Segment 2 (overall drift). Heavy/Severe runs display Segment 1, Segment 2 (early Phase III), and Segment 3 (late Phase III).
+### CUSUM Line Coloring
+
+The CUSUM line changes color at each state transition:
+
+| Segment | State | Color |
+|---------|-------|-------|
+| Before first alarm | Normal | Green |
+| After alarm trigger | Alarm | Orange |
+| After recovery | Recovered | Green |
+| After re-trigger | Alarm | Orange |
+| ... | ... | ... |
+
+Multiple transitions are possible within a single interval.
+
+### Bottom Box Font Colors
+
+**CUSUM (Average VE)**:
+| Final State | Font Color |
+|-------------|------------|
+| Never triggered | Green |
+| Triggered + recovered | Yellow |
+| Triggered + not recovered | Red |
+
+**Slope (%/min)**:
+| Slope Value | Font Color |
+|-------------|------------|
+| < low_threshold | Green |
+| low_threshold to < high_threshold | Yellow |
+| ≥ high_threshold | Red |
 
 ---
 
@@ -384,4 +364,12 @@ A recovered CUSUM indicates:
 | Date | Changes |
 |------|---------|
 | 2026-01-02 | Initial specification |
-| 2026-01-03 | Moderate domain uses same Phase III detection as Heavy/Severe (90s-180s window, 60s calibration); removed max_drift and split_ratio from classification; simplified to single expected_drift threshold |
+| 2026-01-03 | Moderate domain uses same Phase III detection as Heavy/Severe (90s-180s window, 60s calibration) |
+| 2026-01-03 | Removed split_slope_ratio from all classification logic |
+| 2026-01-03 | Simplified to single slope model for all domains |
+| 2026-01-03 | Added max_drift_pct for Moderate domain (1.0%/min default) |
+| 2026-01-03 | Updated classification tree: both domains use low_threshold and high_threshold |
+| 2026-01-03 | Added cusum_transitions for multi-segment CUSUM line visualization |
+| 2026-01-03 | CUSUM line now shows green→orange→green transitions at each alarm/recovery |
+| 2026-01-03 | Added font color specifications for bottom box (CUSUM and Slope) |
+| 2026-01-03 | BORDERLINE status color changed from orange/amber to yellow |
