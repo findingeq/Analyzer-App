@@ -171,7 +171,6 @@ def update_calibration(request: CalibrationUpdateRequest):
             interval_duration_min=interval_duration_min,
             drift_pct=interval_result.get('ve_drift_pct', 0.0),
             sigma_pct=interval_result.get('sigma_pct', 5.0),
-            split_ratio=interval_result.get('split_slope_ratio'),
             avg_ve=interval_result.get('avg_ve', 60.0)
         )
 

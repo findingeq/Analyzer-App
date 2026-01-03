@@ -18,9 +18,9 @@ const STATUS_COLORS = {
     text: "text-emerald-400",
   },
   [IntervalStatus.BORDERLINE]: {
-    bg: "bg-amber-500/20",
-    border: "border-amber-500",
-    text: "text-amber-400",
+    bg: "bg-yellow-500/20",
+    border: "border-yellow-500",
+    text: "text-yellow-400",
   },
   [IntervalStatus.ABOVE_THRESHOLD]: {
     bg: "bg-red-500/20",
@@ -51,16 +51,13 @@ export function IntervalMetrics() {
     advancedParams,
   } = useRunStore();
 
-  // Get expected drift threshold based on run type (from calibrated params)
-  const expectedDriftThreshold = runType === RunType.MODERATE
+  // Get drift thresholds based on run type (from calibrated params)
+  // Low threshold: expected drift (0.3% for Moderate, 1.0% for Heavy/Severe)
+  // High threshold: max drift (1.0% for Moderate, 3.0% for Heavy/Severe)
+  const lowThreshold = runType === RunType.MODERATE
     ? advancedParams.expectedDriftVt1
     : advancedParams.expectedDriftVt2;
-
-  // Split slope ratio threshold from calibrated params (only used for Heavy/Severe)
-  const splitSlopeThreshold = advancedParams.splitRatioVt2;
-
-  // Moderate runs don't show split slope metrics
-  const showSplitSlope = runType !== RunType.MODERATE;
+  const highThreshold = advancedParams.maxDriftVt2; // Used for both (1.0% for Moderate, 3.0% for Heavy/Severe)
 
   // Calculate interval positions as percentages (based on interval range, not breath data)
   const intervalPositions = useMemo(() => {
@@ -154,23 +151,31 @@ export function IntervalMetrics() {
 
         if (!position) return null;
 
-        // Color logic for metrics based on classification thresholds
-        // Avg VE: Green if CUSUM not triggered OR recovered; Red if triggered and not recovered
-        const hasUnrecoveredAlarm = result.alarm_time !== null && result.alarm_time !== undefined && !result.cusum_recovered;
-        const avgVeColor = hasUnrecoveredAlarm ? "text-red-400" : "text-emerald-400";
+        // CUSUM coloring:
+        // - triggered and not recovered = red
+        // - triggered but recovered = yellow
+        // - not triggered = green
+        const cusumTriggered = result.alarm_time !== null && result.alarm_time !== undefined;
+        const cusumRecovered = result.cusum_recovered;
+        let cusumColor = "text-emerald-400"; // not triggered
+        if (cusumTriggered && !cusumRecovered) {
+          cusumColor = "text-red-400"; // triggered, not recovered
+        } else if (cusumTriggered && cusumRecovered) {
+          cusumColor = "text-yellow-400"; // triggered, recovered
+        }
 
-        // Overall slope: binary color based on expected drift threshold (calibrated)
-        // Green if below threshold, Red if at or above threshold
+        // Slope coloring (3 levels based on calibrated thresholds):
+        // Heavy/Severe: <1% = green, 1% to <3% = yellow, >=3% = red
+        // Moderate: <0.3% = green, 0.3% to <1% = yellow, >=1% = red
         const overallSlope = result.ve_drift_pct;
-        const slopeAboveThreshold = overallSlope !== null && overallSlope !== undefined
-          && overallSlope >= expectedDriftThreshold;
-        const slopeColor = slopeAboveThreshold ? "text-red-400" : "text-emerald-400";
-
-        // Split slope ratio: Green if <= 1.2x; Red if > 1.2x
-        const splitRatio = result.split_slope_ratio;
-        const splitRatioTriggered = splitRatio !== null && splitRatio !== undefined
-          && splitRatio >= splitSlopeThreshold;
-        const splitRatioColor = splitRatioTriggered ? "text-red-400" : "text-emerald-400";
+        let slopeColor = "text-emerald-400"; // below low threshold
+        if (overallSlope !== null && overallSlope !== undefined) {
+          if (overallSlope >= highThreshold) {
+            slopeColor = "text-red-400"; // at or above high threshold
+          } else if (overallSlope >= lowThreshold) {
+            slopeColor = "text-yellow-400"; // between low and high threshold
+          }
+        }
 
         return (
           <button
@@ -192,17 +197,12 @@ export function IntervalMetrics() {
             <div className="text-xs font-medium text-zinc-300">
               Int {result.interval_num}
             </div>
-            <div className={`text-sm font-semibold ${avgVeColor}`}>
+            <div className={`text-sm font-semibold ${cusumColor}`}>
               {result.avg_ve.toFixed(1)} L/min
             </div>
             {overallSlope !== null && overallSlope !== undefined && !result.is_ceiling_based && (
               <div className={`text-xs ${slopeColor}`}>
                 {overallSlope >= 0 ? "+" : ""}{overallSlope.toFixed(2)}%/min
-              </div>
-            )}
-            {showSplitSlope && splitRatio !== null && splitRatio !== undefined && (
-              <div className={`text-xs ${splitRatioColor}`}>
-                {splitRatioTriggered ? ">1.2x" : "≤1.2x"}
               </div>
             )}
           </button>

@@ -233,10 +233,10 @@ export function MainChart() {
       );
 
       if (selectedResult) {
-        // Slope1 annotation (segment2 midpoint)
+        // Single slope annotation (segment2 midpoint)
         if (
-          selectedResult.slope1_pct !== null &&
-          selectedResult.slope1_pct !== undefined &&
+          selectedResult.ve_drift_pct !== null &&
+          selectedResult.ve_drift_pct !== undefined &&
           selectedResult.chart_data.segment2_times?.length &&
           selectedResult.chart_data.segment2_times.length >= 2
         ) {
@@ -253,38 +253,7 @@ export function MainChart() {
             symbol: "none",
             label: {
               show: true,
-              formatter: `${selectedResult.slope1_pct >= 0 ? "+" : ""}${selectedResult.slope1_pct.toFixed(1)}%/min`,
-              color: COLORS.slope,
-              fontSize: 10,
-              backgroundColor: "rgba(9, 9, 11, 0.8)",
-              padding: [2, 4],
-              borderRadius: 2,
-            },
-            z: 10,
-          });
-        }
-
-        // Slope2 annotation (segment3 midpoint)
-        if (
-          selectedResult.slope2_pct !== null &&
-          selectedResult.slope2_pct !== undefined &&
-          selectedResult.chart_data.segment3_times?.length &&
-          selectedResult.chart_data.segment3_times.length >= 2
-        ) {
-          const seg3Times = selectedResult.chart_data.segment3_times;
-          const seg3Ve = selectedResult.chart_data.segment3_ve!;
-          const midX = (seg3Times[0] + seg3Times[seg3Times.length - 1]) / 2;
-          const midY = (seg3Ve[0] + seg3Ve[seg3Ve.length - 1]) / 2;
-
-          series.push({
-            type: "scatter",
-            xAxisIndex: 0,
-            yAxisIndex: 0,
-            data: [[midX, midY]],
-            symbol: "none",
-            label: {
-              show: true,
-              formatter: `${selectedResult.slope2_pct >= 0 ? "+" : ""}${selectedResult.slope2_pct.toFixed(1)}%/min`,
+              formatter: `${selectedResult.ve_drift_pct >= 0 ? "+" : ""}${selectedResult.ve_drift_pct.toFixed(1)}%/min`,
               color: COLORS.slope,
               fontSize: 10,
               backgroundColor: "rgba(9, 9, 11, 0.8)",

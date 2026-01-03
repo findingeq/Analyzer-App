@@ -112,14 +112,12 @@ export function Sidebar() {
       setVt1Ceiling(calibrationQuery.data.vt1_ve);
       setVt2Ceiling(calibrationQuery.data.vt2_ve);
       // Advanced params: VT1=Moderate domain, VT2=Heavy domain
-      // Note: VT1/Moderate doesn't use maxDrift or splitRatio
       setAdvancedParams({
         sigmaPctVt1: calibrationQuery.data.sigma_pct_moderate,
         sigmaPctVt2: calibrationQuery.data.sigma_pct_heavy,
         expectedDriftVt1: calibrationQuery.data.expected_drift_moderate,
         expectedDriftVt2: calibrationQuery.data.expected_drift_heavy,
         maxDriftVt2: calibrationQuery.data.max_drift_heavy,
-        splitRatioVt2: calibrationQuery.data.split_ratio_heavy,
       });
       setCalibrationLoaded(true);
     }
@@ -151,7 +149,6 @@ export function Sidebar() {
         sigmaPctVt2: advancedParams.sigmaPctVt2,
         expectedDriftVt2: advancedParams.expectedDriftVt2,
         maxDriftVt2: advancedParams.maxDriftVt2,
-        splitRatioVt2: advancedParams.splitRatioVt2,
         hMultiplierVt2: advancedParams.hMultiplierVt2,
       });
       // Invalidate calibration query to refresh
@@ -175,7 +172,6 @@ export function Sidebar() {
         expectedDriftVt1: params.expected_drift_moderate,
         expectedDriftVt2: params.expected_drift_heavy,
         maxDriftVt2: params.max_drift_heavy,
-        splitRatioVt2: params.split_ratio_heavy,
       });
     } catch (error) {
       console.error("Failed to restore advanced params:", error);
@@ -252,12 +248,7 @@ export function Sidebar() {
           sigma_pct_vt2: advancedParams.sigmaPctVt2,
           expected_drift_pct_vt1: advancedParams.expectedDriftVt1,
           expected_drift_pct_vt2: advancedParams.expectedDriftVt2,
-          // TESTING - Slope model mode (remove after selection)
-          slope_model_mode: advancedParams.slopeModelMode,
-          // TESTING - Huber delta (remove after selection)
           huber_delta: advancedParams.huberDelta,
-          // TESTING - LOESS smoothness (remove after selection)
-          loess_frac: advancedParams.loessFrac,
         },
       });
       return result;
@@ -890,54 +881,12 @@ export function Sidebar() {
                     className="h-8"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Split Ratio (VT2)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={advancedParams.splitRatioVt2}
-                    onChange={(e) =>
-                      setAdvancedParams({
-                        splitRatioVt2: parseFloat(e.target.value) || 1.2,
-                      })
-                    }
-                    className="h-8"
-                  />
-                </div>
               </div>
 
-              {/* TESTING - Slope Model Mode (Remove after selection) */}
+              {/* Huber Delta for regression robustness */}
               <div className="space-y-1 pt-2 border-t">
                 <label className="text-xs text-muted-foreground">
-                  Slope Model (VT2/Severe) - TESTING
-                </label>
-                <Select
-                  value={advancedParams.slopeModelMode}
-                  onValueChange={(v) =>
-                    setAdvancedParams({
-                      slopeModelMode: v as "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic",
-                    })
-                  }
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="single_slope">A: Single Slope</SelectItem>
-                    <SelectItem value="two_hinge">B: Two Hinge (current)</SelectItem>
-                    <SelectItem value="two_hinge_constrained">B+: Two Hinge Constrained</SelectItem>
-                    <SelectItem value="quadratic">C: Quadratic</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground/70">
-                  Testing different slope models for Heavy/Severe intervals
-                </p>
-              </div>
-
-              {/* TESTING - Huber Delta for smoothness (Remove after selection) */}
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  Huber Delta (L/min) - TESTING
+                  Huber Delta (L/min)
                 </label>
                 <Select
                   value={advancedParams.huberDelta.toString()}
@@ -960,35 +909,6 @@ export function Sidebar() {
                 </Select>
                 <p className="text-[10px] text-muted-foreground/70">
                   Lower = more robust to outliers; Higher = more sensitive to data
-                </p>
-              </div>
-
-              {/* TESTING - LOESS Smoothness for visual trend line (Remove after selection) */}
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">
-                  LOESS Smoothness - TESTING
-                </label>
-                <Select
-                  value={advancedParams.loessFrac.toString()}
-                  onValueChange={(v) =>
-                    setAdvancedParams({
-                      loessFrac: parseFloat(v),
-                    })
-                  }
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0.2">0.2 (more wiggly)</SelectItem>
-                    <SelectItem value="0.3">0.3</SelectItem>
-                    <SelectItem value="0.4">0.4 (default)</SelectItem>
-                    <SelectItem value="0.5">0.5</SelectItem>
-                    <SelectItem value="0.6">0.6 (smoother)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground/70">
-                  Controls visual trend line smoothness
                 </p>
               </div>
 

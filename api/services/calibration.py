@@ -527,7 +527,6 @@ def update_calibration_from_interval(
     interval_duration_min: float,
     drift_pct: float,
     sigma_pct: float,
-    split_ratio: float,
     avg_ve: float,
     lambda_: float = 0.9
 ) -> Tuple[CalibrationState, Optional[dict]]:
@@ -541,7 +540,6 @@ def update_calibration_from_interval(
         interval_duration_min: Interval duration in minutes
         drift_pct: Observed drift rate (%/min)
         sigma_pct: Observed sigma (% of baseline)
-        split_ratio: Observed slope split ratio
         avg_ve: Average VE during post-calibration period
         lambda_: Forgetting factor
 
@@ -563,13 +561,6 @@ def update_calibration_from_interval(
         # Update expected_drift and sigma for all eligible domains
         domain.expected_drift = update_nig_posterior(domain.expected_drift, drift_pct, lambda_)
         domain.sigma = update_nig_posterior(domain.sigma, sigma_pct, lambda_)
-
-        # Update split_ratio only for Heavy (not Moderate or Severe)
-        # Moderate doesn't use split_ratio in classification
-        # Severe doesn't have a max_drift ceiling to inform
-        if run_type == RunType.HEAVY:
-            if split_ratio is not None and split_ratio > 0:
-                domain.split_ratio = update_nig_posterior(domain.split_ratio, split_ratio, lambda_)
 
         # Cross-domain max_drift calibration (only for Heavy domain)
         # Severe's expected_drift becomes Heavy's ceiling
