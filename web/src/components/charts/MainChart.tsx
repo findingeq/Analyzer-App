@@ -275,74 +275,11 @@ export function MainChart() {
         const timeValues = result.chart_data.time_values;
         const cusumValues = result.chart_data.cusum_values;
         const threshold = result.cusum_threshold;
-        const alarmTime = result.alarm_time;
-        const hasAlarm = alarmTime !== null && alarmTime !== undefined;
-        const recovered = result.cusum_recovered;
+        const transitions = result.cusum_transitions || [];
 
-        // Split CUSUM into segments based on threshold
-        if (hasAlarm) {
-          // Find index where alarm occurred
-          const alarmIdx = timeValues.findIndex((t) => t >= alarmTime);
-
-          if (alarmIdx > 0) {
-            // Green segment (before alarm)
-            series.push({
-              name: cusumLegendShown ? "" : "CUSUM",
-              type: "line",
-              xAxisIndex: 0,
-              yAxisIndex: 1,
-              data: timeValues.slice(0, alarmIdx + 1).map((t, i) => [t, cusumValues[i]]),
-              showSymbol: false,
-              lineStyle: {
-                color: COLORS.cusumOk,
-                width: 2,
-              },
-              emphasis: {
-                disabled: true,
-              },
-              z: 4,
-            });
-            cusumLegendShown = true;
-
-            // Orange segment (after alarm) - always orange when alarm triggered
-            series.push({
-              name: "",
-              type: "line",
-              xAxisIndex: 0,
-              yAxisIndex: 1,
-              data: timeValues.slice(alarmIdx).map((t, i) => [t, cusumValues[alarmIdx + i]]),
-              showSymbol: false,
-              lineStyle: {
-                color: COLORS.cusumAlarm,
-                width: 2,
-              },
-              emphasis: {
-                disabled: true,
-              },
-              z: 4,
-            });
-          } else {
-            // All orange (alarm from start) - always orange when alarm triggered
-            series.push({
-              name: cusumLegendShown ? "" : "CUSUM",
-              type: "line",
-              xAxisIndex: 0,
-              yAxisIndex: 1,
-              data: timeValues.map((t, i) => [t, cusumValues[i]]),
-              showSymbol: false,
-              lineStyle: {
-                color: COLORS.cusumAlarm,
-                width: 2,
-              },
-              emphasis: {
-                disabled: true,
-              },
-              z: 4,
-            });
-            cusumLegendShown = true;
-          }
-        } else {
-          // No alarm - all green
+        // Build segments based on transitions (green = normal, orange = alarm)
+        if (transitions.length === 0) {
+          // No transitions - all green
           series.push({
             name: cusumLegendShown ? "" : "CUSUM",
             type: "line",
@@ -360,6 +297,71 @@ export function MainChart() {
             z: 4,
           });
           cusumLegendShown = true;
+        } else {
+          // Build segments from transitions
+          // Start with green, switch at each transition
+          let currentIdx = 0;
+          let isAlarmState = false;
+
+          for (let t = 0; t < transitions.length; t++) {
+            const transition = transitions[t];
+            const transitionIdx = timeValues.findIndex((time) => time >= transition.time);
+
+            if (transitionIdx <= currentIdx) continue;
+
+            // Draw segment from currentIdx to transitionIdx
+            const segmentData = [];
+            for (let i = currentIdx; i <= transitionIdx; i++) {
+              segmentData.push([timeValues[i], cusumValues[i]]);
+            }
+
+            series.push({
+              name: !cusumLegendShown ? "CUSUM" : "",
+              type: "line",
+              xAxisIndex: 0,
+              yAxisIndex: 1,
+              data: segmentData,
+              showSymbol: false,
+              lineStyle: {
+                color: isAlarmState ? COLORS.cusumAlarm : COLORS.cusumOk,
+                width: 2,
+              },
+              emphasis: {
+                disabled: true,
+              },
+              z: 4,
+            });
+            cusumLegendShown = true;
+
+            currentIdx = transitionIdx;
+            isAlarmState = transition.is_alarm; // After this transition, switch state
+          }
+
+          // Draw final segment from last transition to end
+          if (currentIdx < timeValues.length - 1) {
+            const segmentData = [];
+            for (let i = currentIdx; i < timeValues.length; i++) {
+              segmentData.push([timeValues[i], cusumValues[i]]);
+            }
+
+            series.push({
+              name: !cusumLegendShown ? "CUSUM" : "",
+              type: "line",
+              xAxisIndex: 0,
+              yAxisIndex: 1,
+              data: segmentData,
+              showSymbol: false,
+              lineStyle: {
+                color: isAlarmState ? COLORS.cusumAlarm : COLORS.cusumOk,
+                width: 2,
+              },
+              emphasis: {
+                disabled: true,
+              },
+              z: 4,
+            });
+            cusumLegendShown = true;
+          }
         }
 
         // Add threshold line for each interval
