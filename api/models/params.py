@@ -108,6 +108,13 @@ class AnalysisParams(BaseModel):
         description="Slope model for Heavy/Severe: single_slope, two_hinge, two_hinge_constrained, quadratic"
     )
 
+    # TESTING - Huber loss delta parameter for regression smoothness
+    # Lower = more robust to outliers but may underfit; Higher = more sensitive but may overfit
+    huber_delta: float = Field(
+        default=5.0,
+        description="Huber loss delta threshold (L/min) for robust regression"
+    )
+
     # Ceiling-based analysis parameters
     vt1_ve_ceiling: float = Field(
         default=100.0,

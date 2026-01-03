@@ -76,6 +76,9 @@ export interface AnalysisParams {
 
   // TESTING - Slope model mode for Heavy/Severe (remove after selection)
   slope_model_mode?: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
+
+  // TESTING - Huber delta for regression smoothness (remove after selection)
+  huber_delta?: number;
 }
 
 // =============================================================================

@@ -254,6 +254,8 @@ export function Sidebar() {
           expected_drift_pct_vt2: advancedParams.expectedDriftVt2,
           // TESTING - Slope model mode (remove after selection)
           slope_model_mode: advancedParams.slopeModelMode,
+          // TESTING - Huber delta (remove after selection)
+          huber_delta: advancedParams.huberDelta,
         },
       });
       return result;
@@ -927,6 +929,35 @@ export function Sidebar() {
                 </Select>
                 <p className="text-[10px] text-muted-foreground/70">
                   Testing different slope models for Heavy/Severe intervals
+                </p>
+              </div>
+
+              {/* TESTING - Huber Delta for smoothness (Remove after selection) */}
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">
+                  Huber Delta (L/min) - TESTING
+                </label>
+                <Select
+                  value={advancedParams.huberDelta.toString()}
+                  onValueChange={(v) =>
+                    setAdvancedParams({
+                      huberDelta: parseFloat(v),
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2">2 (more robust)</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="5">5 (default)</SelectItem>
+                    <SelectItem value="7">7</SelectItem>
+                    <SelectItem value="10">10 (more sensitive)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground/70">
+                  Lower = more robust to outliers; Higher = more sensitive to data
                 </p>
               </div>
 

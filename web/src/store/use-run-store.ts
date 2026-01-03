@@ -71,6 +71,8 @@ interface RunState {
     splitRatioVt2: number;
     // TESTING - Slope model mode for Heavy/Severe (remove after selection)
     slopeModelMode: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
+    // TESTING - Huber delta for regression smoothness (remove after selection)
+    huberDelta: number;
   };
 }
 
@@ -139,6 +141,8 @@ const defaultAdvancedParams = {
   splitRatioVt2: 1.2,
   // TESTING - Slope model mode for Heavy/Severe (remove after selection)
   slopeModelMode: "two_hinge" as const,
+  // TESTING - Huber delta for regression smoothness (remove after selection)
+  huberDelta: 5.0,
 };
 
 const initialState: RunState = {
