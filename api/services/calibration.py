@@ -229,23 +229,24 @@ class CalibrationState:
 # Default Parameter Values
 # ============================================================================
 
+# These MUST match AnalysisParams defaults in api/models/params.py
 DEFAULT_PARAMS = {
     'moderate': {
-        'expected_drift_pct': 0.5,
-        'max_drift_pct': 2.0,
-        'sigma_pct': 10.0,
+        'expected_drift_pct': 0.3,  # expected_drift_pct_vt1
+        'max_drift_pct': 1.0,       # max_drift_pct_vt1
+        'sigma_pct': 7.0,           # sigma_pct_vt1
         'split_ratio': 1.0
     },
     'heavy': {
-        'expected_drift_pct': 1.0,
-        'max_drift_pct': 3.0,
-        'sigma_pct': 5.0,
+        'expected_drift_pct': 1.0,  # expected_drift_pct_vt2
+        'max_drift_pct': 3.0,       # max_drift_pct_vt2
+        'sigma_pct': 4.0,           # sigma_pct_vt2
         'split_ratio': 1.2
     },
     'severe': {
-        'expected_drift_pct': 2.0,
-        'max_drift_pct': 5.0,
-        'sigma_pct': 5.0,
+        'expected_drift_pct': 1.0,  # uses vt2 params
+        'max_drift_pct': 3.0,       # uses vt2 params
+        'sigma_pct': 4.0,           # uses vt2 params
         'split_ratio': 1.2
     }
 }
