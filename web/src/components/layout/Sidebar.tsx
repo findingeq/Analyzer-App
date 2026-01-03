@@ -868,9 +868,8 @@ export function Sidebar() {
                 </div>
               </div>
 
-              {/* Max Drift Threshold (VT2 only - VT1/Moderate doesn't use max_drift) */}
+              {/* Max Drift & Split Ratio (VT2 only - VT1/Moderate doesn't use these) */}
               <div className="grid grid-cols-2 gap-3">
-                <div></div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Max Drift % (VT2)</label>
                   <Input
@@ -885,11 +884,6 @@ export function Sidebar() {
                     className="h-8"
                   />
                 </div>
-              </div>
-
-              {/* Split Ratio (VT2 only - VT1/Moderate doesn't use split_ratio) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div></div>
                 <div className="space-y-1">
                   <label className="text-xs text-muted-foreground">Split Ratio (VT2)</label>
                   <Input
