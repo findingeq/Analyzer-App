@@ -28,13 +28,10 @@ import {
   detectIntervals,
   runAnalysis,
   readFileAsText,
-  listSessions,
-  getSession,
   updateCalibration,
   setVEThresholdManual,
   getCalibrationParams,
   setAdvancedParams as syncAdvancedParamsToCloud,
-  type SessionInfo,
 } from "@/lib/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatTime } from "@/lib/utils";
@@ -90,7 +87,6 @@ export function Sidebar() {
     reset,
   } = useRunStore();
 
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -183,14 +179,6 @@ export function Sidebar() {
     }
   }, [setAdvancedParams]);
 
-  // Fetch cloud sessions
-  const sessionsQuery = useQuery({
-    queryKey: ["sessions"],
-    queryFn: listSessions,
-    enabled: dataSource === "cloud",
-    retry: false,
-  });
-
   // Parse CSV mutation
   const parseMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -198,24 +186,6 @@ export function Sidebar() {
       setCSVContent(content, file.name);
       const metadata = await parseCSV({ csv_content: content });
       const intervals = await detectIntervals({ csv_content: content });
-      return { metadata, intervals };
-    },
-    onSuccess: ({ metadata, intervals }) => {
-      setCSVMetadata(metadata);
-      setRunType(intervals.run_type);
-      setNumIntervals(intervals.num_intervals);
-      setIntervalDuration(intervals.interval_duration_min);
-      setRecoveryDuration(intervals.recovery_duration_min);
-    },
-  });
-
-  // Load cloud session mutation
-  const loadSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      const session = await getSession(sessionId);
-      setCSVContent(session.csv_content, sessionId);
-      const metadata = await parseCSV({ csv_content: session.csv_content });
-      const intervals = await detectIntervals({ csv_content: session.csv_content });
       return { metadata, intervals };
     },
     onSuccess: ({ metadata, intervals }) => {
@@ -288,30 +258,6 @@ export function Sidebar() {
     },
     [parseMutation]
   );
-
-  // Handle session selection
-  const handleSessionSelect = useCallback(
-    (sessionId: string) => {
-      setSelectedSessionId(sessionId);
-      loadSessionMutation.mutate(sessionId);
-    },
-    [loadSessionMutation]
-  );
-
-  // Reset session selection when switching data source
-  useEffect(() => {
-    setSelectedSessionId(null);
-  }, [dataSource]);
-
-  // Format session date for display
-  const formatSessionDate = (isoDate: string) => {
-    try {
-      const date = new Date(isoDate);
-      return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } catch {
-      return isoDate;
-    }
-  };
 
   // Collapsed mode: show icon buttons
   if (sidebarCollapsed) {
@@ -482,57 +428,17 @@ export function Sidebar() {
         </Card>
       )}
 
-      {/* Cloud Sessions */}
-      {dataSource === "cloud" && (
+      {/* Cloud Sessions Info */}
+      {dataSource === "cloud" && csvMetadata && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Cloud Sessions</CardTitle>
+            <CardTitle className="text-sm">Session Info</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {sessionsQuery.isLoading && (
-                <p className="text-xs text-muted-foreground">Loading sessions...</p>
-              )}
-              {sessionsQuery.isError && (
-                <p className="text-xs text-destructive">
-                  Cloud storage not available. Firebase may not be configured.
-                </p>
-              )}
-              {sessionsQuery.isSuccess && sessionsQuery.data.length === 0 && (
-                <p className="text-xs text-muted-foreground">No sessions found.</p>
-              )}
-              {sessionsQuery.isSuccess && sessionsQuery.data.length > 0 && (
-                <Select
-                  value={selectedSessionId ?? undefined}
-                  onValueChange={handleSessionSelect}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a session..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sessionsQuery.data.map((session: SessionInfo) => (
-                      <SelectItem key={session.session_id} value={session.session_id}>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{session.filename}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatSessionDate(session.uploaded_at)}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              {loadSessionMutation.isPending && (
-                <p className="text-xs text-muted-foreground">Loading session...</p>
-              )}
-              {csvMetadata && (
-                <div className="text-xs text-muted-foreground">
-                  <p>Format: {csvMetadata.format}</p>
-                  <p>Breaths: {csvMetadata.total_breaths}</p>
-                  <p>Duration: {formatTime(csvMetadata.duration_seconds)}</p>
-                </div>
-              )}
+            <div className="text-xs text-muted-foreground">
+              <p>Format: {csvMetadata.format}</p>
+              <p>Breaths: {csvMetadata.total_breaths}</p>
+              <p>Duration: {formatTime(csvMetadata.duration_seconds)}</p>
             </div>
           </CardContent>
         </Card>

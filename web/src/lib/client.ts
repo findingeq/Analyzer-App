@@ -152,6 +152,10 @@ export interface SessionSummary {
   recovery_duration_min?: number | null;
   intensity?: string | null;
   avg_pace_min_per_mile?: number | null;
+  // Analysis results (populated after analysis is run)
+  observed_sigma_pct?: number | null;
+  observed_drift_pct?: number | null;
+  exclude_from_calibration?: boolean;
 }
 
 export interface SessionInfo {
@@ -179,6 +183,49 @@ export async function listSessions(): Promise<SessionInfo[]> {
  */
 export async function getSession(sessionId: string): Promise<SessionContent> {
   return fetchApi<undefined, SessionContent>(`/sessions/${encodeURIComponent(sessionId)}`, "GET");
+}
+
+/**
+ * Update a session with analysis results (sigma %, drift %)
+ * Called after analysis is run to store observed values for display in run list
+ */
+export async function updateSessionAnalysis(
+  sessionId: string,
+  observedSigmaPct: number | null,
+  observedDriftPct: number | null
+): Promise<{ success: boolean; session_id: string; message: string }> {
+  return fetchApi<
+    { session_id: string; observed_sigma_pct: number | null; observed_drift_pct: number | null },
+    { success: boolean; session_id: string; message: string }
+  >(
+    `/sessions/${encodeURIComponent(sessionId)}/analysis`,
+    "POST",
+    {
+      session_id: sessionId,
+      observed_sigma_pct: observedSigmaPct,
+      observed_drift_pct: observedDriftPct,
+    }
+  );
+}
+
+/**
+ * Update a session's calibration exclusion status
+ * When excluded, the session won't contribute to ML calibration updates
+ */
+export async function updateSessionCalibration(
+  sessionId: string,
+  excludeFromCalibration: boolean
+): Promise<{ success: boolean; session_id: string; exclude_from_calibration: boolean; message: string }> {
+  return fetchApi<
+    { exclude_from_calibration: boolean },
+    { success: boolean; session_id: string; exclude_from_calibration: boolean; message: string }
+  >(
+    `/sessions/${encodeURIComponent(sessionId)}/calibration`,
+    "POST",
+    {
+      exclude_from_calibration: excludeFromCalibration,
+    }
+  );
 }
 
 // =============================================================================
