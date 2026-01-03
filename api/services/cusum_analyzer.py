@@ -293,7 +293,7 @@ def analyze_interval_segmented(
     if n_analysis_points >= 3:
         analysis_times_min = bin_times_min[analysis_mask]
         analysis_ve = ve_binned[analysis_mask]
-        slope, intercept = fit_single_slope(analysis_times_min, analysis_ve)
+        slope, intercept = fit_single_slope(analysis_times_min, analysis_ve, params.huber_delta)
         slope_line_times_rel = np.array([bin_times_rel[analysis_mask][0], interval_end_rel])
         slope_line_times_min = slope_line_times_rel / 60.0
         slope_line_ve = intercept + slope * slope_line_times_min
@@ -481,32 +481,27 @@ def analyze_interval_segmented(
             else:
                 status = IntervalStatus.ABOVE_THRESHOLD
     else:
-        # Heavy/Severe domain: full classification with max_drift and split_ratio
-        split_ratio = split_slope_ratio if split_slope_ratio is not None else 1.0
-        low_threshold = expected_drift_pct
-        high_threshold = max_drift_threshold
-        split_ratio_threshold = 1.2
+        # Heavy/Severe domain: simplified classification (single slope, no split ratio)
+        # ABOVE: (slope >= expected_drift AND sustained alarm) OR (slope >= max_drift)
+        # BELOW: slope < expected_drift AND (no alarm OR recovered)
+        # BORDERLINE: everything else
+        low_threshold = expected_drift_pct   # 1.0%/min default
+        high_threshold = max_drift_threshold  # 3.0%/min default
 
-        if not cusum_alarm or cusum_recovered:
-            if overall_slope_pct < low_threshold:
-                status = IntervalStatus.BELOW_THRESHOLD
-            elif overall_slope_pct < high_threshold:
-                if split_ratio < split_ratio_threshold:
-                    status = IntervalStatus.BELOW_THRESHOLD
-                else:
-                    status = IntervalStatus.BORDERLINE
-            else:
-                status = IntervalStatus.BORDERLINE
+        sustained_alarm = cusum_alarm and not cusum_recovered
+
+        if overall_slope_pct >= high_threshold:
+            # Very high drift - ABOVE regardless of CUSUM
+            status = IntervalStatus.ABOVE_THRESHOLD
+        elif overall_slope_pct >= low_threshold and sustained_alarm:
+            # Moderate drift with sustained CUSUM alarm - ABOVE
+            status = IntervalStatus.ABOVE_THRESHOLD
+        elif overall_slope_pct < low_threshold and not sustained_alarm:
+            # Low drift and no sustained alarm - BELOW
+            status = IntervalStatus.BELOW_THRESHOLD
         else:
-            if overall_slope_pct < low_threshold:
-                status = IntervalStatus.BORDERLINE
-            elif overall_slope_pct < high_threshold:
-                if split_ratio < split_ratio_threshold:
-                    status = IntervalStatus.BORDERLINE
-                else:
-                    status = IntervalStatus.ABOVE_THRESHOLD
-            else:
-                status = IntervalStatus.ABOVE_THRESHOLD
+            # Everything else - BORDERLINE
+            status = IntervalStatus.BORDERLINE
 
     # Convert to absolute times
     abs_bin_times = bin_times_rel + breath_times_raw[0]
@@ -682,7 +677,7 @@ def analyze_interval_ceiling(
 
         # Calculate slope from linear fit for drift metrics
         analysis_times_min = analysis_times / 60.0
-        slope, _ = fit_single_slope(analysis_times_min, analysis_ve)
+        slope, _ = fit_single_slope(analysis_times_min, analysis_ve, params.huber_delta)
     else:
         slope = 0
         slope_line_times_rel = np.array([])

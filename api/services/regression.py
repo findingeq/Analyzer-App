@@ -42,7 +42,7 @@ def _huber_loss_hinge(params_opt, t_arr, ve_arr, delta=5.0):
     return np.sum(loss)
 
 
-def fit_single_slope(t: np.ndarray, ve: np.ndarray) -> Tuple[float, float]:
+def fit_single_slope(t: np.ndarray, ve: np.ndarray, delta: float = 5.0) -> Tuple[float, float]:
     """
     Fit a single linear slope using robust Huber regression.
 
@@ -53,6 +53,7 @@ def fit_single_slope(t: np.ndarray, ve: np.ndarray) -> Tuple[float, float]:
     Args:
         t: Time values (can be seconds or minutes)
         ve: VE values
+        delta: Huber loss threshold (L/min). Lower = more robust to outliers.
 
     Returns:
         Tuple of (slope, intercept)
@@ -68,7 +69,7 @@ def fit_single_slope(t: np.ndarray, ve: np.ndarray) -> Tuple[float, float]:
         result = minimize(
             _huber_loss_linear,
             [intercept_init, slope_init],
-            args=(t, ve),
+            args=(t, ve, delta),
             method='L-BFGS-B',
             options={'maxiter': 1000}
         )
@@ -118,6 +119,9 @@ def fit_robust_hinge(
     tau_max_param = tau_max_override if tau_max_override is not None else params.phase3_max_time
     tau_default = tau_default_override if tau_default_override is not None else params.phase3_default
 
+    # Get delta from params (TESTING - for smoothness tuning)
+    delta = params.huber_delta
+
     # Use user override if provided
     if params.phase3_onset_override is not None:
         tau = params.phase3_onset_override
@@ -139,7 +143,7 @@ def fit_robust_hinge(
             b0 = ve[0] - b1 * t[0]
             b2 = 0
 
-        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve, delta)
         return tau, b0, b1, b2, final_loss, True
 
     # Set tau bounds
@@ -158,7 +162,7 @@ def fit_robust_hinge(
         b1 = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
         b0 = ve[0] - b1 * t[0]
         b2 = 0
-        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve, delta)
         return tau, b0, b1, b2, final_loss, False
 
     # Initial guess: tau at midpoint of allowed range
@@ -187,7 +191,7 @@ def fit_robust_hinge(
         result = minimize(
             _huber_loss_hinge,
             initial_params,
-            args=(t, ve),
+            args=(t, ve, delta),
             method='L-BFGS-B',
             bounds=bounds,
             options={'maxiter': 1000}
@@ -205,7 +209,7 @@ def fit_robust_hinge(
         b1 = (ve[-1] - ve[0]) / (t[-1] - t[0]) if (t[-1] - t[0]) > 0 else 0
         b0 = ve[0] - b1 * t[0]
         b2 = 0
-        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve)
+        final_loss = _huber_loss_hinge([tau, b0, b1, b2], t, ve, delta)
 
     return tau, b0, b1, b2, final_loss, detection_succeeded
 
