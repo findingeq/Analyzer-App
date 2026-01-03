@@ -22,6 +22,9 @@ from .regression import (
     fit_single_slope,
     fit_robust_hinge,
     fit_second_hinge,
+    # TESTING - Remove after slope model selection
+    fit_second_hinge_constrained,
+    fit_quadratic_slope,
 )
 from .cusum_analyzer import (
     analyze_interval_segmented,
@@ -49,6 +52,9 @@ __all__ = [
     "fit_single_slope",
     "fit_robust_hinge",
     "fit_second_hinge",
+    # TESTING - Remove after slope model selection
+    "fit_second_hinge_constrained",
+    "fit_quadratic_slope",
     # CUSUM Analyzer
     "analyze_interval_segmented",
     "analyze_interval_ceiling",

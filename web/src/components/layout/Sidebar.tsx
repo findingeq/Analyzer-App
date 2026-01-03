@@ -252,6 +252,8 @@ export function Sidebar() {
           sigma_pct_vt2: advancedParams.sigmaPctVt2,
           expected_drift_pct_vt1: advancedParams.expectedDriftVt1,
           expected_drift_pct_vt2: advancedParams.expectedDriftVt2,
+          // TESTING - Slope model mode (remove after selection)
+          slope_model_mode: advancedParams.slopeModelMode,
         },
       });
       return result;
@@ -898,6 +900,34 @@ export function Sidebar() {
                     className="h-8"
                   />
                 </div>
+              </div>
+
+              {/* TESTING - Slope Model Mode (Remove after selection) */}
+              <div className="space-y-1 pt-2 border-t">
+                <label className="text-xs text-muted-foreground">
+                  Slope Model (VT2/Severe) - TESTING
+                </label>
+                <Select
+                  value={advancedParams.slopeModelMode}
+                  onValueChange={(v) =>
+                    setAdvancedParams({
+                      slopeModelMode: v as "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic",
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single_slope">A: Single Slope</SelectItem>
+                    <SelectItem value="two_hinge">B: Two Hinge (current)</SelectItem>
+                    <SelectItem value="two_hinge_constrained">B+: Two Hinge Constrained</SelectItem>
+                    <SelectItem value="quadratic">C: Quadratic</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground/70">
+                  Testing different slope models for Heavy/Severe intervals
+                </p>
               </div>
 
               {/* Sync/Restore Buttons for Advanced Params */}

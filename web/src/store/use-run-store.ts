@@ -69,6 +69,8 @@ interface RunState {
     expectedDriftVt1: number;
     expectedDriftVt2: number;
     splitRatioVt2: number;
+    // TESTING - Slope model mode for Heavy/Severe (remove after selection)
+    slopeModelMode: "single_slope" | "two_hinge" | "two_hinge_constrained" | "quadratic";
   };
 }
 
@@ -135,6 +137,8 @@ const defaultAdvancedParams = {
   expectedDriftVt1: 0.3,
   expectedDriftVt2: 1.0,
   splitRatioVt2: 1.2,
+  // TESTING - Slope model mode for Heavy/Severe (remove after selection)
+  slopeModelMode: "two_hinge" as const,
 };
 
 const initialState: RunState = {

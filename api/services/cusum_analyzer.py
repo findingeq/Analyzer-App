@@ -16,7 +16,14 @@ from ..models.params import AnalysisParams
 from ..models.schemas import Interval, IntervalResult, ChartData
 
 from .signal_filter import apply_hybrid_filtering
-from .regression import fit_single_slope, fit_robust_hinge, fit_second_hinge
+from .regression import (
+    fit_single_slope,
+    fit_robust_hinge,
+    fit_second_hinge,
+    # TESTING - Remove after slope model selection
+    fit_second_hinge_constrained,
+    fit_quadratic_slope,
+)
 
 
 def calculate_madsd_sigma(ve_binned: np.ndarray) -> float:
@@ -310,6 +317,9 @@ def analyze_interval_segmented(
     segment3_times_rel = None
     segment3_ve = None
 
+    # Get slope model mode (TESTING - Remove after slope model selection)
+    slope_model_mode = params.slope_model_mode
+
     if run_type == RunType.MODERATE:
         # Moderate runs: single slope from Phase III onset to end (no split slope)
         # Use the overall slope line for segment 2, no segment 3
@@ -329,11 +339,70 @@ def analyze_interval_segmented(
 
             # Make segment1 end at the anchor point
             segment1_ve[-1] = anchor_ve
-    elif len(post_phase3_times) >= 4:
-        # Heavy/Severe runs: fit second hinge for split slope analysis
-        tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge(
-            post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
+
+    # ========================================================================
+    # TESTING - Slope model modes for Heavy/Severe (Remove after selection)
+    # ========================================================================
+    elif slope_model_mode == "single_slope":
+        # Option A: Single slope from Phase III onset to end (no second hinge)
+        if n_analysis_points >= 3 and len(slope_line_times_rel) > 0:
+            phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
+            anchor_ve = ve_binned[phase3_idx]
+
+            segment2_times_rel = np.array([phase3_onset_rel, interval_end_rel])
+            slope_line_intercept = slope_line_ve[0] - slope * (slope_line_times_rel[0] / 60.0) if len(slope_line_ve) > 0 else cal_ve_mean
+            segment2_ve = slope_line_intercept + slope * (segment2_times_rel / 60.0)
+
+            ve_offset = anchor_ve - segment2_ve[0]
+            segment2_ve = segment2_ve + ve_offset
+            segment1_ve[-1] = anchor_ve
+
+            # No second hinge, no segment 3
+            hinge2_detected = False
+
+    elif slope_model_mode == "quadratic" and len(post_phase3_times) >= 4:
+        # Option C: Quadratic curve fit (smooth acceleration)
+        q_a, q_b, q_c, quad_succeeded = fit_quadratic_slope(
+            post_phase3_times, post_phase3_ve, phase3_onset_rel
         )
+
+        phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
+        anchor_ve = ve_binned[phase3_idx]
+
+        # Generate smooth quadratic curve for visualization
+        n_points = 50
+        segment2_times_rel = np.linspace(phase3_onset_rel, interval_end_rel, n_points)
+        segment2_ve_raw = q_a + q_b * segment2_times_rel + q_c * segment2_times_rel ** 2
+
+        # Anchor to actual data at phase3_onset
+        ve_offset = anchor_ve - segment2_ve_raw[0]
+        segment2_ve = segment2_ve_raw + ve_offset
+        segment1_ve[-1] = anchor_ve
+
+        # No second hinge for quadratic, no segment 3
+        hinge2_detected = quad_succeeded
+
+        # Calculate equivalent slope metrics from quadratic
+        # Average slope = derivative at midpoint = b + 2*c*t_mid
+        t_mid = (phase3_onset_rel + interval_end_rel) / 2.0
+        avg_slope_per_sec = q_b + 2 * q_c * t_mid
+        avg_slope_per_min = avg_slope_per_sec * 60.0
+        if cal_ve_mean > 0:
+            slope1_pct = (avg_slope_per_min / cal_ve_mean) * 100.0
+            slope2_pct = slope1_pct  # Same for quadratic (no split)
+        split_slope_ratio = 1.0  # No split for quadratic
+
+    elif len(post_phase3_times) >= 4:
+        # Option B (default "two_hinge") or "two_hinge_constrained"
+        if slope_model_mode == "two_hinge_constrained":
+            tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge_constrained(
+                post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
+            )
+        else:
+            # Default: "two_hinge" (original behavior)
+            tau2, h2_b0, h2_b1, h2_b2, _, hinge2_detected = fit_second_hinge(
+                post_phase3_times, post_phase3_ve, phase3_onset_rel, interval_end_rel
+            )
 
         hinge2_time_rel = tau2
 
@@ -348,41 +417,31 @@ def analyze_interval_segmented(
             slope2_pct = 0.0
 
         # Calculate split slope ratio with reasonable bounds
-        # Use minimum of 0.1%/min for denominator to avoid division by near-zero
-        # Cap the ratio to 5.0 max (ratios > 5 are physiologically meaningless)
-        min_slope_for_ratio = 0.1  # 0.1%/min minimum
+        min_slope_for_ratio = 0.1
         if abs(slope1_pct) < min_slope_for_ratio:
-            # If slope1 is near-zero, check slope2 as well
             if abs(slope2_pct) < min_slope_for_ratio:
-                # Both slopes near-zero = ratio of 1.0 (flat throughout)
                 split_slope_ratio = 1.0
             else:
-                # slope1 flat, slope2 not: cap at reasonable max
                 split_slope_ratio = min(5.0, abs(slope2_pct) / min_slope_for_ratio)
         else:
-            # Normal case: slope2 / slope1, but cap at 5.0
             split_slope_ratio = min(5.0, slope2_pct / slope1_pct)
 
-        # Find actual VE value at phase3_onset from binned data (anchor point)
-        # Use the closest bin to phase3_onset
         phase3_idx = np.argmin(np.abs(bin_times_rel - phase3_onset_rel))
         anchor_ve = ve_binned[phase3_idx]
 
-        # Compute the model's prediction at phase3_onset
         model_ve_at_phase3 = h2_b0 + h2_b1 * phase3_onset_rel + h2_b2 * max(0, phase3_onset_rel - hinge2_time_rel)
-
-        # Calculate offset to shift model to pass through anchor point
         ve_offset = anchor_ve - model_ve_at_phase3
 
-        # Generate segment lines with offset applied
         segment2_times_rel = np.array([phase3_onset_rel, hinge2_time_rel])
         segment2_ve = ve_offset + h2_b0 + h2_b1 * segment2_times_rel + h2_b2 * np.maximum(0, segment2_times_rel - hinge2_time_rel)
 
         segment3_times_rel = np.array([hinge2_time_rel, interval_end_rel])
         segment3_ve = ve_offset + h2_b0 + h2_b1 * segment3_times_rel + h2_b2 * np.maximum(0, segment3_times_rel - hinge2_time_rel)
 
-        # Make segment1 end at the anchor point
         segment1_ve[-1] = anchor_ve
+    # ========================================================================
+    # END TESTING SECTION
+    # ========================================================================
 
     # Last 60s and 30s averages
     interval_duration = bin_times_rel[-1] if len(bin_times_rel) > 0 else 0
