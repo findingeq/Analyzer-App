@@ -148,12 +148,13 @@ export function MainChart() {
     ];
 
     // Add HR line if HR data is available
+    // Uses top grid (gridIndex 1, xAxisIndex 1, yAxisIndex 2)
     if (breath_data.hr && breath_data.hr.length > 0) {
       series.push({
         name: "HR",
         type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 2, // Use third Y-axis (HR axis)
+        xAxisIndex: 1, // Top grid x-axis
+        yAxisIndex: 2, // HR y-axis (top grid)
         data: breath_data.times.map((t, i) => [t, breath_data.hr![i]]),
         smooth: false,
         showSymbol: false,
@@ -269,6 +270,7 @@ export function MainChart() {
     }
 
     // Add CUSUM lines for all intervals when CUSUM is enabled
+    // Uses bottom grid (gridIndex 2, xAxisIndex 2, yAxisIndex 1)
     if (showCusum) {
       let cusumLegendShown = false;
       results.forEach((result) => {
@@ -284,13 +286,13 @@ export function MainChart() {
           series.push({
             name: cusumLegendShown ? "" : "CUSUM",
             type: "line",
-            xAxisIndex: 0,
-            yAxisIndex: 1,
+            xAxisIndex: 2, // Bottom grid x-axis
+            yAxisIndex: 1, // CUSUM y-axis (bottom grid)
             data: timeValues.map((t, i) => [t, cusumValues[i]]),
             showSymbol: false,
             lineStyle: {
               color: COLORS.cusumOk,
-              width: 2,
+              width: 2.5, // Thickened for visibility when flat
             },
             emphasis: {
               disabled: true,
@@ -319,13 +321,13 @@ export function MainChart() {
             series.push({
               name: !cusumLegendShown ? "CUSUM" : "",
               type: "line",
-              xAxisIndex: 0,
-              yAxisIndex: 1,
+              xAxisIndex: 2, // Bottom grid x-axis
+              yAxisIndex: 1, // CUSUM y-axis (bottom grid)
               data: segmentData,
               showSymbol: false,
               lineStyle: {
                 color: isAlarmState ? COLORS.cusumAlarm : COLORS.cusumOk,
-                width: 2,
+                width: 2.5, // Thickened for visibility when flat
               },
               emphasis: {
                 disabled: true,
@@ -348,13 +350,13 @@ export function MainChart() {
             series.push({
               name: !cusumLegendShown ? "CUSUM" : "",
               type: "line",
-              xAxisIndex: 0,
-              yAxisIndex: 1,
+              xAxisIndex: 2, // Bottom grid x-axis
+              yAxisIndex: 1, // CUSUM y-axis (bottom grid)
               data: segmentData,
               showSymbol: false,
               lineStyle: {
                 color: isAlarmState ? COLORS.cusumAlarm : COLORS.cusumOk,
-                width: 2,
+                width: 2.5, // Thickened for visibility when flat
               },
               emphasis: {
                 disabled: true,
@@ -401,36 +403,48 @@ export function MainChart() {
     const xAxisMin = firstIntervalStart;
     const xAxisMax = lastIntervalEnd;
 
-    // Calculate max values for Y axes
-    const maxVE = Math.max(...breath_data.ve_median, 100);
+    // Check if HR data exists
+    const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
 
-    // Calculate max CUSUM across all intervals
-    // Scale CUSUM so peak appears at around 50 on the VE scale (visual height)
+    // =============================================================================
+    // VE Axis Scaling: Data stays within 25-75% of chart height
+    // =============================================================================
+    const veValues = breath_data.ve_median.filter((v) => v != null && !isNaN(v));
+    const minVE = veValues.length > 0 ? Math.min(...veValues) : 0;
+    const maxVE = veValues.length > 0 ? Math.max(...veValues) : 100;
+    const veRange = maxVE - minVE || 1; // Avoid division by zero
+    // To place minVE at 25% and maxVE at 75%, axis range = 2x data range
+    const veAxisMin = Math.max(0, minVE - veRange * 0.5);
+    const veAxisMax = maxVE + veRange * 0.5;
+
+    // =============================================================================
+    // CUSUM Axis Scaling: Data stays within bottom 1/3 of chart (0-33%)
+    // Axis ticks span bottom 50% of chart
+    // Within the bottom 50% axis, data occupies 0-66% (which is 0-33% of full chart)
+    // =============================================================================
     const allCusumValues = results.flatMap((r) => r.chart_data.cusum_values);
     const allThresholds = results.map((r) => r.cusum_threshold);
-    const peakCusum = allCusumValues.length > 0
-      ? Math.max(...allCusumValues, ...allThresholds)
+    const maxCusumData = allCusumValues.length > 0
+      ? Math.max(...allCusumValues, ...allThresholds, 1) // Min of 1 to avoid zero range
       : 100;
+    // To place data in bottom 66% of axis (0-33% of chart), extend max by 50%
+    const cusumAxisMin = 0;
+    const cusumAxisMax = maxCusumData * 1.5;
 
-    // Scale so peak CUSUM appears at 50 VE visually
-    // Formula: (peakCusum / maxCusum) * maxVE = 50
-    // So: maxCusum = peakCusum * maxVE / 50
-    const targetVisualHeight = 50; // Peak CUSUM should appear at this VE level
-    const maxCusum = (peakCusum * Math.ceil(maxVE * 1.1)) / targetVisualHeight;
-
-    // Calculate HR range (only if HR data exists)
-    // HR axis maps to UPPER half of chart visually
-    const hasHR = !!(breath_data.hr && breath_data.hr.length > 0);
+    // =============================================================================
+    // HR Axis Scaling: Data stays within top 1/3 of chart (67-100%)
+    // Axis ticks span top 50% of chart
+    // Within the top 50% axis, data occupies 34-100% (which is 67-100% of full chart)
+    // =============================================================================
     const hrValues = hasHR ? breath_data.hr!.filter((v) => v != null && !isNaN(v)) : [];
     const minHR = hrValues.length > 0 ? Math.min(...hrValues) : 80;
     const maxHR = hrValues.length > 0 ? Math.max(...hrValues) : 180;
-    // Scale HR axis so it visually occupies upper half of chart
-    // By setting axis min below actual data, the HR line appears in upper region
-    const hrRange = maxHR - minHR;
-    const hrPadding = Math.max(10, hrRange * 0.1);
+    const hrRange = maxHR - minHR || 1; // Avoid division by zero
+    const hrPadding = Math.max(5, hrRange * 0.05);
+    // To place data in top 66% of axis (67-100% of chart), extend min downward
+    // Data should occupy 34-100% of axis, so axis min = minHR - (hrRange / 0.66) * 0.34
+    const hrAxisMin = minHR - hrPadding - hrRange * 0.5;
     const hrAxisMax = maxHR + hrPadding;
-    // Set min so that the actual HR data range maps to upper ~50% of chart
-    const hrAxisMin = minHR - hrPadding - hrRange;
 
     return {
       backgroundColor: COLORS.background,
@@ -536,51 +550,91 @@ export function MainChart() {
           },
         ],
       },
-      grid: {
-        left: 60,
-        right: hasHR ? 110 : (showCusum ? 60 : 20),
-        top: 50,
-        bottom: 80,
-      },
-      xAxis: {
-        type: "value",
-        name: "Time (seconds)",
-        nameLocation: "middle",
-        nameGap: 30,
-        nameTextStyle: {
-          color: COLORS.text,
+      grid: [
+        // Grid 0: Main grid for VE (full height)
+        {
+          left: 60,
+          right: 70,
+          top: 50,
+          bottom: 80,
         },
-        min: xAxisMin,
-        max: xAxisMax,
-        axisLine: {
-          lineStyle: {
-            color: COLORS.gridLine,
-          },
+        // Grid 1: Top grid for HR axis (top 50%)
+        {
+          left: 60,
+          right: 70,
+          top: 50,
+          height: "35%",
         },
-        axisLabel: {
-          color: COLORS.text,
-          formatter: (value: number) => {
-            const mins = Math.floor(value / 60);
-            const secs = Math.round(value % 60);
-            return `${mins}:${secs.toString().padStart(2, "0")}`;
-          },
+        // Grid 2: Bottom grid for CUSUM axis (bottom 50%)
+        {
+          left: 60,
+          right: 70,
+          bottom: 80,
+          height: "35%",
         },
-        splitLine: {
-          lineStyle: {
-            color: COLORS.gridLine,
-          },
-        },
-      },
-      yAxis: [
+      ],
+      xAxis: [
+        // xAxis 0: Main x-axis for VE (visible)
         {
           type: "value",
+          gridIndex: 0,
+          name: "Time (seconds)",
+          nameLocation: "middle",
+          nameGap: 30,
+          nameTextStyle: {
+            color: COLORS.text,
+          },
+          min: xAxisMin,
+          max: xAxisMax,
+          axisLine: {
+            lineStyle: {
+              color: COLORS.gridLine,
+            },
+          },
+          axisLabel: {
+            color: COLORS.text,
+            formatter: (value: number) => {
+              const mins = Math.floor(value / 60);
+              const secs = Math.round(value % 60);
+              return `${mins}:${secs.toString().padStart(2, "0")}`;
+            },
+          },
+          splitLine: {
+            lineStyle: {
+              color: COLORS.gridLine,
+            },
+          },
+        },
+        // xAxis 1: Top grid x-axis for HR (hidden, synced)
+        {
+          type: "value",
+          gridIndex: 1,
+          show: false,
+          min: xAxisMin,
+          max: xAxisMax,
+        },
+        // xAxis 2: Bottom grid x-axis for CUSUM (hidden, synced)
+        {
+          type: "value",
+          gridIndex: 2,
+          show: false,
+          min: xAxisMin,
+          max: xAxisMax,
+        },
+      ],
+      yAxis: [
+        // yAxis 0: VE axis (main grid, left side, full height)
+        // Data scaled to appear in 25-75% of chart
+        {
+          type: "value",
+          gridIndex: 0,
           name: "VE (L/min)",
           nameTextStyle: {
             color: COLORS.ve,
           },
           position: "left",
-          min: 0,
-          max: Math.ceil(maxVE * 1.1),
+          min: Math.floor(veAxisMin),
+          max: Math.ceil(veAxisMax),
           axisLine: {
             lineStyle: {
               color: COLORS.ve,
@@ -595,17 +649,19 @@ export function MainChart() {
             },
           },
         },
+        // yAxis 1: CUSUM axis (bottom grid, right side)
+        // Data scaled to appear in bottom 1/3 of chart
         {
           type: "value",
+          gridIndex: 2,
           name: "CUSUM",
           nameTextStyle: {
             color: COLORS.cusumOk,
           },
           position: "right",
-          min: 0,
-          max: Math.ceil(maxCusum),
+          min: cusumAxisMin,
+          max: Math.ceil(cusumAxisMax),
           show: showCusum,
-          offset: hasHR ? 50 : 0, // Offset when HR axis is shown
           axisLine: {
             lineStyle: {
               color: COLORS.cusumOk,
@@ -618,16 +674,18 @@ export function MainChart() {
             show: false,
           },
         },
-        // HR Y-axis (third axis, positioned right)
+        // yAxis 2: HR axis (top grid, right side)
+        // Data scaled to appear in top 1/3 of chart
         {
           type: "value",
+          gridIndex: 1,
           name: "HR (bpm)",
           nameTextStyle: {
             color: COLORS.hr,
           },
           position: "right",
-          min: hrAxisMin,
-          max: hrAxisMax,
+          min: Math.floor(hrAxisMin),
+          max: Math.ceil(hrAxisMax),
           show: hasHR,
           axisLine: {
             lineStyle: {
@@ -645,7 +703,7 @@ export function MainChart() {
       dataZoom: [
         {
           type: "inside",
-          xAxisIndex: 0,
+          xAxisIndex: [0, 1, 2], // Sync all three x-axes
           start: zoomStart,
           end: zoomEnd,
           zoomOnMouseWheel: true,
@@ -653,7 +711,7 @@ export function MainChart() {
         },
         {
           type: "slider",
-          xAxisIndex: 0,
+          xAxisIndex: [0, 1, 2], // Sync all three x-axes
           start: zoomStart,
           end: zoomEnd,
           height: 30,

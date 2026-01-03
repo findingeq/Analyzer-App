@@ -171,7 +171,7 @@ def _extract_session_summary(csv_content: str) -> dict:
                 ve_values = breath_df.loc[workout_mask, 've_raw'].dropna().values
 
             if len(ve_values) > 0:
-                # Count time in each zone (using bin size of ~4 seconds)
+                # Count time in each zone (using bin size of ~5 seconds)
                 moderate_count = sum(ve_values <= vt1)
                 heavy_count = sum((ve_values > vt1) & (ve_values <= vt2))
                 severe_count = sum(ve_values > vt2)
