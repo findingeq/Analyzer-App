@@ -57,7 +57,7 @@ Where:
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | τ Min | 90 sec | Minimum allowed Phase III onset |
-| τ Max | 180 sec (3 min) | Maximum allowed Phase III onset |
+| τ Max | 210 sec (3:30) | Maximum allowed Phase III onset |
 | τ Default | 150 sec (2.5 min) | Fallback if detection fails |
 
 **Detection failure conditions**:

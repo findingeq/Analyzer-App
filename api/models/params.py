@@ -19,8 +19,8 @@ class AnalysisParams(BaseModel):
         description="Minimum time for Phase III detection for VT2 (seconds)"
     )
     phase3_max_time: float = Field(
-        default=180.0,
-        description="Maximum time for Phase III detection for VT2 (seconds)"
+        default=210.0,
+        description="Maximum time for Phase III detection (seconds)"
     )
     phase3_default: float = Field(
         default=150.0,
