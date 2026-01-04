@@ -28,7 +28,6 @@ import {
   detectIntervals,
   runAnalysis,
   readFileAsText,
-  updateCalibration,
   setVEThresholdManual,
   getCalibrationParams,
   setAdvancedParams as syncAdvancedParamsToCloud,
@@ -75,7 +74,6 @@ export function Sidebar() {
     setVt2Ceiling,
     setUseThresholdsForAll,
     setAdvancedParams,
-    setPendingVEPrompt,
     reset,
   } = useRunStore();
 
@@ -215,22 +213,11 @@ export function Sidebar() {
       });
       return result;
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       setAnalysisResult(result);
       setIsAnalyzing(false);
-
-      // Update calibration with results - ONLY for cloud runs (not local CSV uploads)
-      if (dataSource === "cloud" && runType && result.results?.length > 0) {
-        try {
-          const calibrationResult = await updateCalibration(runType, result.results);
-          if (calibrationResult.ve_prompt) {
-            setPendingVEPrompt(calibrationResult.ve_prompt);
-          }
-        } catch (error) {
-          // Calibration update failed, but don't break the analysis flow
-          console.warn("Calibration update failed:", error);
-        }
-      }
+      // Note: Calibration updates are handled in StartupScreen when sessions are first analyzed
+      // The Sidebar re-analysis is for parameter tweaking, not recalibration
     },
     onError: () => {
       setIsAnalyzing(false);

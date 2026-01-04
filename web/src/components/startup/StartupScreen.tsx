@@ -131,13 +131,14 @@ export function StartupScreen() {
       setAnalysisResult(analysisResult);
       setIsAnalyzing(false);
 
-      // Check if session is excluded from calibration
+      // Check if session is excluded from calibration or has already contributed
       const sessionInfo = sessionsQuery.data?.find((s) => s.session_id === sessionId);
       const isExcluded = sessionInfo?.summary?.exclude_from_calibration ?? false;
+      const hasAlreadyContributed = sessionInfo?.summary?.calibration_contribution?.contributed ?? false;
 
-      // Update calibration with results (only if not excluded)
+      // Update calibration with results (only if not excluded AND hasn't already contributed)
       let calibrationContribution: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null = null;
-      if (runType && analysisResult.results?.length > 0 && !isExcluded) {
+      if (runType && analysisResult.results?.length > 0 && !isExcluded && !hasAlreadyContributed) {
         try {
           const calibrationResult = await updateCalibration(runType, analysisResult.results);
           if (calibrationResult.ve_prompt) {
