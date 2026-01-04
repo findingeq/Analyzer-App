@@ -156,6 +156,7 @@ export interface SessionSummary {
   observed_sigma_pct?: number | null;
   observed_drift_pct?: number | null;
   exclude_from_calibration?: boolean;
+  analysis_outcome?: string | null; // "below", "above", or "mixed"
 }
 
 export interface SessionInfo {
@@ -186,16 +187,24 @@ export async function getSession(sessionId: string): Promise<SessionContent> {
 }
 
 /**
- * Update a session with analysis results (sigma %, drift %)
+ * Update a session with analysis results (sigma %, drift %, calibration contribution, analysis outcome)
  * Called after analysis is run to store observed values for display in run list
  */
 export async function updateSessionAnalysis(
   sessionId: string,
   observedSigmaPct: number | null,
-  observedDriftPct: number | null
+  observedDriftPct: number | null,
+  calibrationContribution?: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null,
+  analysisOutcome?: string | null
 ): Promise<{ success: boolean; session_id: string; message: string }> {
   return fetchApi<
-    { session_id: string; observed_sigma_pct: number | null; observed_drift_pct: number | null },
+    {
+      session_id: string;
+      observed_sigma_pct: number | null;
+      observed_drift_pct: number | null;
+      calibration_contribution?: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null;
+      analysis_outcome?: string | null;
+    },
     { success: boolean; session_id: string; message: string }
   >(
     `/sessions/${encodeURIComponent(sessionId)}/analysis`,
@@ -204,6 +213,8 @@ export async function updateSessionAnalysis(
       session_id: sessionId,
       observed_sigma_pct: observedSigmaPct,
       observed_drift_pct: observedDriftPct,
+      calibration_contribution: calibrationContribution,
+      analysis_outcome: analysisOutcome,
     }
   );
 }
@@ -360,12 +371,16 @@ export async function setVEThresholdManual(
 
 /**
  * Delete a cloud session
+ * If user_id is provided and the session contributed to calibration,
+ * calibration will be recalculated from remaining sessions.
  */
 export async function deleteSession(
-  sessionId: string
-): Promise<{ success: boolean; message: string }> {
-  return fetchApi<undefined, { success: boolean; message: string }>(
-    `/sessions/${encodeURIComponent(sessionId)}`,
+  sessionId: string,
+  userId?: string
+): Promise<{ success: boolean; message: string; calibration_updated?: boolean }> {
+  const uid = userId || getOrCreateUserId();
+  return fetchApi<undefined, { success: boolean; message: string; calibration_updated?: boolean }>(
+    `/sessions/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(uid)}`,
     "DELETE"
   );
 }

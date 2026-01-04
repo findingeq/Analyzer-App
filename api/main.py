@@ -109,6 +109,7 @@ class SessionSummary(BaseModel):
     observed_sigma_pct: Optional[float] = None  # Observed sigma % from MADSD
     observed_drift_pct: Optional[float] = None  # Observed drift % per minute
     exclude_from_calibration: bool = False  # Whether to exclude from ML calibration
+    analysis_outcome: Optional[str] = None  # "below", "above", or "mixed"
 
 
 class SessionInfo(BaseModel):
@@ -271,7 +272,8 @@ def list_sessions():
                     avg_pace_min_per_mile=summary_data.get("avg_pace_min_per_mile"),
                     observed_sigma_pct=summary_data.get("observed_sigma_pct"),
                     observed_drift_pct=summary_data.get("observed_drift_pct"),
-                    exclude_from_calibration=summary_data.get("exclude_from_calibration", False)
+                    exclude_from_calibration=summary_data.get("exclude_from_calibration", False),
+                    analysis_outcome=summary_data.get("analysis_outcome")
                 )
 
             sessions.append(SessionInfo(
@@ -304,23 +306,74 @@ def get_session(session_id: str):
 
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str):
+def delete_session(session_id: str, user_id: Optional[str] = None):
     """
     Delete a session and its metadata from Firebase Storage.
+    If the session contributed to calibration, recalculates calibration
+    from remaining sessions.
     """
+    from .services.calibration import recalculate_calibration_from_contributions
+    from .routers.calibration import _load_calibration_state, _save_calibration_state
+
     if not FIREBASE_ENABLED:
         raise HTTPException(status_code=503, detail="Firebase storage not configured")
+
     csv_blob = bucket.blob(f"sessions/{session_id}")
     meta_blob = bucket.blob(f"sessions/{session_id}.meta.json")
 
     if not csv_blob.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Check if this session contributed to calibration
+    deleted_contribution = None
+    if meta_blob.exists():
+        try:
+            metadata = json.loads(meta_blob.download_as_text())
+            deleted_contribution = metadata.get('summary', {}).get('calibration_contribution')
+        except Exception:
+            pass
+
+    # Delete the session files
     csv_blob.delete()
     if meta_blob.exists():
         meta_blob.delete()
 
-    return {"success": True, "message": f"Deleted {session_id}"}
+    # If this session contributed to calibration and we have a user_id, recalculate
+    calibration_updated = False
+    if deleted_contribution and deleted_contribution.get('contributed') and user_id:
+        try:
+            # Get all remaining sessions and their contributions
+            remaining_contributions = []
+            for blob in bucket.list_blobs(prefix="sessions/"):
+                if blob.name.endswith('.meta.json') and blob.name != f"sessions/{session_id}.meta.json":
+                    try:
+                        meta = json.loads(blob.download_as_text())
+                        contrib = meta.get('summary', {}).get('calibration_contribution')
+                        if contrib and contrib.get('contributed'):
+                            remaining_contributions.append(contrib)
+                    except Exception:
+                        continue
+
+            # Recalculate calibration from remaining contributions
+            new_state = recalculate_calibration_from_contributions(remaining_contributions)
+
+            # Preserve VE thresholds from existing state (they're user-set, not recalculated)
+            existing_state = _load_calibration_state(user_id)
+            new_state.vt1_ve = existing_state.vt1_ve
+            new_state.vt2_ve = existing_state.vt2_ve
+            new_state.enabled = existing_state.enabled
+
+            # Save updated calibration
+            _save_calibration_state(user_id, new_state)
+            calibration_updated = True
+        except Exception as e:
+            print(f"Warning: Failed to recalculate calibration after session deletion: {e}")
+
+    return {
+        "success": True,
+        "message": f"Deleted {session_id}",
+        "calibration_updated": calibration_updated
+    }
 
 
 @app.get("/api/storage/list")
@@ -395,11 +448,20 @@ def debug_session(session_id: str):
     }
 
 
+class CalibrationContributionData(BaseModel):
+    """Calibration contribution data from a session."""
+    contributed: bool
+    run_type: Optional[str] = None
+    sigma_pct: Optional[float] = None
+
+
 class UpdateSessionAnalysisRequest(BaseModel):
     """Request to update session with analysis results."""
     session_id: str
     observed_sigma_pct: Optional[float] = None
     observed_drift_pct: Optional[float] = None
+    calibration_contribution: Optional[CalibrationContributionData] = None
+    analysis_outcome: Optional[str] = None  # "below", "above", or "mixed"
 
 
 class UpdateSessionCalibrationRequest(BaseModel):
@@ -433,6 +495,14 @@ def update_session_analysis(session_id: str, request: UpdateSessionAnalysisReque
             metadata["summary"]["observed_sigma_pct"] = request.observed_sigma_pct
         if request.observed_drift_pct is not None:
             metadata["summary"]["observed_drift_pct"] = request.observed_drift_pct
+        if request.analysis_outcome is not None:
+            metadata["summary"]["analysis_outcome"] = request.analysis_outcome
+        if request.calibration_contribution is not None:
+            metadata["summary"]["calibration_contribution"] = {
+                "contributed": request.calibration_contribution.contributed,
+                "run_type": request.calibration_contribution.run_type,
+                "sigma_pct": request.calibration_contribution.sigma_pct,
+            }
 
         # Save updated metadata
         meta_blob.upload_from_string(json.dumps(metadata), content_type="application/json")

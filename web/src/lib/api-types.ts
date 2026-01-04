@@ -323,6 +323,12 @@ export interface CalibrationUpdateRequest {
   }>;
 }
 
+export interface CalibrationContribution {
+  contributed: boolean;
+  run_type?: string | null;
+  sigma_pct?: number | null;
+}
+
 export interface CalibrationUpdateResponse {
   success: boolean;
   run_count: number;
@@ -332,6 +338,7 @@ export interface CalibrationUpdateResponse {
     proposed_value: number;
     divergence: number;
   } | null;
+  contribution?: CalibrationContribution | null;
 }
 
 export interface VEApprovalRequest {

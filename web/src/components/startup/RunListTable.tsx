@@ -123,6 +123,46 @@ export function RunListTable({
     }
   };
 
+  // Format analysis outcome for display
+  const formatAnalysisOutcome = (session: SessionInfo) => {
+    const outcome = session.summary?.analysis_outcome;
+    const intensity = session.summary?.intensity?.toLowerCase();
+    const isModerate = intensity === "moderate";
+    const threshold = isModerate ? "VT1" : "VT2";
+
+    switch (outcome) {
+      case "below":
+        return `Below/At ${threshold}`;
+      case "above":
+        return `Above ${threshold}`;
+      case "mixed":
+        return "Mixed";
+      default:
+        return "-";
+    }
+  };
+
+  // Get analysis outcome badge color
+  const getAnalysisOutcomeColor = (outcome: string | null | undefined) => {
+    switch (outcome) {
+      case "below":
+        return "text-green-400";
+      case "above":
+        return "text-red-400";
+      case "mixed":
+        return "text-yellow-400";
+      default:
+        return "text-muted-foreground";
+    }
+  };
+
+  // Check if session qualifies for calibration (>= 6 min and not mixed)
+  const qualifiesForCalibration = (session: SessionInfo) => {
+    const durationMin = (session.summary?.duration_seconds ?? 0) / 60;
+    const outcome = session.summary?.analysis_outcome;
+    return durationMin >= 6 && outcome && outcome !== "mixed";
+  };
+
   // Filter and sort sessions
   const filteredSessions = useMemo(() => {
     let result = sessions.filter((s) => s.summary);
@@ -359,6 +399,9 @@ export function RunListTable({
                     <SortIcon field="intensity" />
                   </div>
                 </th>
+                <th className="py-2 px-3 text-left font-medium text-muted-foreground">
+                  Analysis
+                </th>
                 <th
                   className="py-2 px-3 text-left font-medium text-muted-foreground cursor-pointer hover:text-foreground"
                   onClick={() => handleSort("type")}
@@ -400,14 +443,14 @@ export function RunListTable({
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={7 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={8 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
                     Loading sessions...
                   </td>
                 </tr>
               )}
               {!isLoading && filteredSessions.length === 0 && (
                 <tr>
-                  <td colSpan={7 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
+                  <td colSpan={8 + (onDeleteSession ? 1 : 0) + (onToggleCalibration ? 1 : 0)} className="py-8 text-center text-muted-foreground">
                     {hasActiveFilters
                       ? "No sessions match your filters"
                       : "No sessions found"}
@@ -423,32 +466,41 @@ export function RunListTable({
                   >
                     {onToggleCalibration && (
                       <td className="py-2 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={`h-6 w-6 p-0 ${
-                            session.summary?.exclude_from_calibration
-                              ? "text-muted-foreground hover:text-foreground"
-                              : "text-emerald-500 hover:text-emerald-400"
-                          }`}
-                          onClick={() => {
-                            onToggleCalibration(
-                              session.session_id,
-                              !session.summary?.exclude_from_calibration
-                            );
-                          }}
-                          title={
-                            session.summary?.exclude_from_calibration
-                              ? "Click to include in calibration"
-                              : "Click to exclude from calibration"
-                          }
-                        >
-                          {session.summary?.exclude_from_calibration ? (
-                            <XCircle className="h-4 w-4" />
-                          ) : (
-                            <Check className="h-4 w-4" />
-                          )}
-                        </Button>
+                        {qualifiesForCalibration(session) ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-6 w-6 p-0 ${
+                              session.summary?.exclude_from_calibration
+                                ? "text-muted-foreground hover:text-foreground"
+                                : "text-emerald-500 hover:text-emerald-400"
+                            }`}
+                            onClick={() => {
+                              onToggleCalibration(
+                                session.session_id,
+                                !session.summary?.exclude_from_calibration
+                              );
+                            }}
+                            title={
+                              session.summary?.exclude_from_calibration
+                                ? "Click to include in calibration"
+                                : "Click to exclude from calibration"
+                            }
+                          >
+                            {session.summary?.exclude_from_calibration ? (
+                              <XCircle className="h-4 w-4" />
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </Button>
+                        ) : (
+                          <span
+                            className="text-muted-foreground/40"
+                            title="Not eligible for calibration (run too short or mixed outcome)"
+                          >
+                            —
+                          </span>
+                        )}
                       </td>
                     )}
                     <td className="py-2 px-3 text-primary font-medium">
@@ -462,6 +514,9 @@ export function RunListTable({
                       >
                         {session.summary?.intensity || "Unknown"}
                       </span>
+                    </td>
+                    <td className={`py-2 px-3 ${getAnalysisOutcomeColor(session.summary?.analysis_outcome)}`}>
+                      {formatAnalysisOutcome(session)}
                     </td>
                     <td className="py-2 px-3 text-muted-foreground">
                       {formatType(session)}
