@@ -373,13 +373,15 @@ def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationSt
 
     Fixes:
     1. Sigma anchor_value=0.0 bug (should be domain default: 7.0/4.0/4.0)
-    2. VT2 anchor_value=60.0 bug (should match current_value, typically 80.0)
+
+    Note: VE thresholds are NOT migrated - the user must input their own VT1/VT2
+    values from a ramp test, which serve as the initial anchor.
 
     Returns (state, was_migrated) tuple.
     """
     migrated = False
 
-    # Fix 1: Check and fix each domain's sigma anchor
+    # Fix sigma anchor_value=0.0 bug
     domains = [
         ('moderate', state.moderate),
         ('heavy', state.heavy),
@@ -396,13 +398,6 @@ def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationSt
             if domain.sigma.posterior.mu < 0.1:
                 domain.sigma.posterior.mu = expected_sigma
             migrated = True
-
-    # Fix 2: Check VT2 anchor_value bug (anchor=60 when current=80 is wrong)
-    # The anchor should generally match current_value unless user manually set it
-    if state.vt2_ve.anchor_value < 65.0 and state.vt2_ve.current_value >= 75.0:
-        print(f"Migrating vt2_ve anchor_value from {state.vt2_ve.anchor_value} to {state.vt2_ve.current_value}")
-        state.vt2_ve.anchor_value = state.vt2_ve.current_value
-        migrated = True
 
     return state, migrated
 
