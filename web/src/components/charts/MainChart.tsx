@@ -631,18 +631,18 @@ export function MainChart() {
           gridIndex: 0,
           name: "VE (L/min)",
           nameTextStyle: {
-            color: COLORS.ve,
+            color: COLORS.text,
           },
           position: "left",
           min: Math.floor(veAxisMin),
           max: Math.ceil(veAxisMax),
           axisLine: {
             lineStyle: {
-              color: COLORS.ve,
+              color: COLORS.gridLine,
             },
           },
           axisLabel: {
-            color: COLORS.ve,
+            color: COLORS.text,
           },
           splitLine: {
             lineStyle: {
@@ -661,11 +661,11 @@ export function MainChart() {
           show: showCusum,
           axisLine: {
             lineStyle: {
-              color: COLORS.cusumOk,
+              color: COLORS.gridLine,
             },
           },
           axisLabel: {
-            color: COLORS.cusumOk,
+            color: COLORS.text,
           },
           splitLine: {
             show: false,
@@ -682,11 +682,11 @@ export function MainChart() {
           show: hasHR,
           axisLine: {
             lineStyle: {
-              color: COLORS.hr,
+              color: COLORS.gridLine,
             },
           },
           axisLabel: {
-            color: COLORS.hr,
+            color: COLORS.text,
           },
           splitLine: {
             show: false,
