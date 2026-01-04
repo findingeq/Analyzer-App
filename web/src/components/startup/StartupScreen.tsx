@@ -313,7 +313,7 @@ export function StartupScreen() {
             onSelectSession={handleSelectSession}
             onDeleteSession={handleDeleteSession}
             onToggleCalibration={handleToggleSessionCalibration}
-            isLoading={loadSessionMutation.isPending || deleteSessionMutation.isPending}
+            isLoading={false}
           />
 
           {/* Error loading session */}
