@@ -367,6 +367,9 @@ def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationSt
     """
     Migrate old calibration states that have buggy anchor_value=0.0.
 
+    Also resets anchor_kappa to restore anchor influence if it has decayed
+    too much (below 1.0).
+
     Returns (state, was_migrated) tuple.
     """
     migrated = False
@@ -382,11 +385,18 @@ def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationSt
         expected_sigma = DEFAULT_PARAMS[domain_key]['sigma_pct']
         # If anchor is 0 or very close to 0, it's the bug - reset to default
         if domain.sigma.anchor_value < 0.1:
-            print(f"Migrating {domain_key} sigma anchor from {domain.sigma.anchor_value} to {expected_sigma}")
+            print(f"Migrating {domain_key} sigma anchor_value from {domain.sigma.anchor_value} to {expected_sigma}")
             domain.sigma.anchor_value = expected_sigma
             # Also reset the posterior mu if it's unreasonable
             if domain.sigma.posterior.mu < 0.1:
                 domain.sigma.posterior.mu = expected_sigma
+            # Reset anchor_kappa to restore anchor influence
+            domain.sigma.anchor_kappa = 4.0
+            migrated = True
+        # Also check if anchor_kappa has decayed too much (anchor has no pull)
+        elif domain.sigma.anchor_kappa < 1.0:
+            print(f"Migrating {domain_key} sigma anchor_kappa from {domain.sigma.anchor_kappa} to 4.0")
+            domain.sigma.anchor_kappa = 4.0
             migrated = True
 
     return state, migrated

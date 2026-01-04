@@ -275,7 +275,6 @@ export function MainChart() {
     // Add CUSUM lines for all intervals when CUSUM is enabled
     // Uses bottom grid (gridIndex 2, xAxisIndex 2, yAxisIndex 1)
     if (showCusum) {
-      let cusumLegendShown = false;
       results.forEach((result) => {
         if (!result.chart_data.cusum_values.length) return;
 
@@ -287,7 +286,7 @@ export function MainChart() {
         if (transitions.length === 0) {
           // No transitions - all green
           series.push({
-            name: cusumLegendShown ? "" : "CUSUM",
+            name: "CUSUM",
             type: "line",
             xAxisIndex: 2, // Bottom grid x-axis
             yAxisIndex: 1, // CUSUM y-axis (bottom grid)
@@ -302,7 +301,6 @@ export function MainChart() {
             },
             z: 4,
           });
-          cusumLegendShown = true;
         } else {
           // Build segments from transitions
           // Start with green, switch at each transition
@@ -322,7 +320,7 @@ export function MainChart() {
             }
 
             series.push({
-              name: !cusumLegendShown ? "CUSUM" : "",
+              name: "CUSUM",
               type: "line",
               xAxisIndex: 2, // Bottom grid x-axis
               yAxisIndex: 1, // CUSUM y-axis (bottom grid)
@@ -337,7 +335,6 @@ export function MainChart() {
               },
               z: 4,
             });
-            cusumLegendShown = true;
 
             currentIdx = transitionIdx;
             isAlarmState = transition.is_alarm; // After this transition, switch state
@@ -351,7 +348,7 @@ export function MainChart() {
             }
 
             series.push({
-              name: !cusumLegendShown ? "CUSUM" : "",
+              name: "CUSUM",
               type: "line",
               xAxisIndex: 2, // Bottom grid x-axis
               yAxisIndex: 1, // CUSUM y-axis (bottom grid)
@@ -366,7 +363,6 @@ export function MainChart() {
               },
               z: 4,
             });
-            cusumLegendShown = true;
           }
         }
 
