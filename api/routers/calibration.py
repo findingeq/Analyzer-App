@@ -224,7 +224,7 @@ def reset_calibration(user_id: str = Query(..., description="User/device identif
 
     Creates a fresh calibration state with default parameters.
     """
-    state = CalibrationState()
+    state = create_default_calibration_state()
     _save_calibration_state(user_id, state)
 
     return {

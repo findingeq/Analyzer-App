@@ -231,10 +231,14 @@ class CalibrationState:
 
     # Global VE thresholds
     vt1_ve: VEThresholdState = field(default_factory=lambda: VEThresholdState(
-        current_value=60.0
+        current_value=60.0,
+        anchor_value=60.0,
+        anchor_kappa=4.0
     ))
     vt2_ve: VEThresholdState = field(default_factory=lambda: VEThresholdState(
-        current_value=80.0
+        current_value=80.0,
+        anchor_value=80.0,  # Must be 80, not the dataclass default of 60
+        anchor_kappa=4.0
     ))
 
     # Calibration enabled flag
@@ -365,13 +369,17 @@ def create_default_calibration_state() -> 'CalibrationState':
 
 def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationState', bool]:
     """
-    Migrate old calibration states that have buggy anchor_value=0.0.
+    Migrate old calibration states with buggy anchor values.
+
+    Fixes:
+    1. Sigma anchor_value=0.0 bug (should be domain default: 7.0/4.0/4.0)
+    2. VT2 anchor_value=60.0 bug (should match current_value, typically 80.0)
 
     Returns (state, was_migrated) tuple.
     """
     migrated = False
 
-    # Check and fix each domain's sigma anchor
+    # Fix 1: Check and fix each domain's sigma anchor
     domains = [
         ('moderate', state.moderate),
         ('heavy', state.heavy),
@@ -388,6 +396,13 @@ def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationSt
             if domain.sigma.posterior.mu < 0.1:
                 domain.sigma.posterior.mu = expected_sigma
             migrated = True
+
+    # Fix 2: Check VT2 anchor_value bug (anchor=60 when current=80 is wrong)
+    # The anchor should generally match current_value unless user manually set it
+    if state.vt2_ve.anchor_value < 65.0 and state.vt2_ve.current_value >= 75.0:
+        print(f"Migrating vt2_ve anchor_value from {state.vt2_ve.anchor_value} to {state.vt2_ve.current_value}")
+        state.vt2_ve.anchor_value = state.vt2_ve.current_value
+        migrated = True
 
     return state, migrated
 
