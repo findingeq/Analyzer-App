@@ -166,9 +166,37 @@ export function StartupScreen() {
           ? validDrifts.reduce((a, b) => a + b, 0) / validDrifts.length
           : null;
 
+        // Calculate analysis outcome (below, above, or mixed) using majority rule
+        let analysisOutcome: string | null = null;
+        const results = analysisResult.results;
+        if (results.length === 1) {
+          // Single interval: use direct classification
+          const status = results[0].status;
+          if (status === "BELOW_THRESHOLD") {
+            analysisOutcome = "below";
+          } else if (status === "ABOVE_THRESHOLD") {
+            analysisOutcome = "above";
+          } else {
+            analysisOutcome = "mixed"; // BORDERLINE counts as mixed
+          }
+        } else {
+          // Multiple intervals: use majority rule
+          const totalIntervals = results.length;
+          const belowCount = results.filter((r) => r.status === "BELOW_THRESHOLD").length;
+          const aboveCount = results.filter((r) => r.status === "ABOVE_THRESHOLD").length;
+
+          if (belowCount > totalIntervals / 2) {
+            analysisOutcome = "below";
+          } else if (aboveCount > totalIntervals / 2) {
+            analysisOutcome = "above";
+          } else {
+            analysisOutcome = "mixed";
+          }
+        }
+
         // Save analysis results and calibration contribution to session metadata
         try {
-          await updateSessionAnalysis(sessionId, avgSigma, avgDrift, calibrationContribution);
+          await updateSessionAnalysis(sessionId, avgSigma, avgDrift, calibrationContribution, analysisOutcome);
           // Refresh sessions list to show updated sigma/drift
           queryClient.invalidateQueries({ queryKey: ["sessions"] });
         } catch (error) {

@@ -156,6 +156,7 @@ export interface SessionSummary {
   observed_sigma_pct?: number | null;
   observed_drift_pct?: number | null;
   exclude_from_calibration?: boolean;
+  analysis_outcome?: string | null; // "below", "above", or "mixed"
 }
 
 export interface SessionInfo {
@@ -186,14 +187,15 @@ export async function getSession(sessionId: string): Promise<SessionContent> {
 }
 
 /**
- * Update a session with analysis results (sigma %, drift %, calibration contribution)
+ * Update a session with analysis results (sigma %, drift %, calibration contribution, analysis outcome)
  * Called after analysis is run to store observed values for display in run list
  */
 export async function updateSessionAnalysis(
   sessionId: string,
   observedSigmaPct: number | null,
   observedDriftPct: number | null,
-  calibrationContribution?: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null
+  calibrationContribution?: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null,
+  analysisOutcome?: string | null
 ): Promise<{ success: boolean; session_id: string; message: string }> {
   return fetchApi<
     {
@@ -201,6 +203,7 @@ export async function updateSessionAnalysis(
       observed_sigma_pct: number | null;
       observed_drift_pct: number | null;
       calibration_contribution?: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null;
+      analysis_outcome?: string | null;
     },
     { success: boolean; session_id: string; message: string }
   >(
@@ -211,6 +214,7 @@ export async function updateSessionAnalysis(
       observed_sigma_pct: observedSigmaPct,
       observed_drift_pct: observedDriftPct,
       calibration_contribution: calibrationContribution,
+      analysis_outcome: analysisOutcome,
     }
   );
 }

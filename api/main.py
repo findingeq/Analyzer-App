@@ -109,6 +109,7 @@ class SessionSummary(BaseModel):
     observed_sigma_pct: Optional[float] = None  # Observed sigma % from MADSD
     observed_drift_pct: Optional[float] = None  # Observed drift % per minute
     exclude_from_calibration: bool = False  # Whether to exclude from ML calibration
+    analysis_outcome: Optional[str] = None  # "below", "above", or "mixed"
 
 
 class SessionInfo(BaseModel):
@@ -271,7 +272,8 @@ def list_sessions():
                     avg_pace_min_per_mile=summary_data.get("avg_pace_min_per_mile"),
                     observed_sigma_pct=summary_data.get("observed_sigma_pct"),
                     observed_drift_pct=summary_data.get("observed_drift_pct"),
-                    exclude_from_calibration=summary_data.get("exclude_from_calibration", False)
+                    exclude_from_calibration=summary_data.get("exclude_from_calibration", False),
+                    analysis_outcome=summary_data.get("analysis_outcome")
                 )
 
             sessions.append(SessionInfo(
@@ -459,6 +461,7 @@ class UpdateSessionAnalysisRequest(BaseModel):
     observed_sigma_pct: Optional[float] = None
     observed_drift_pct: Optional[float] = None
     calibration_contribution: Optional[CalibrationContributionData] = None
+    analysis_outcome: Optional[str] = None  # "below", "above", or "mixed"
 
 
 class UpdateSessionCalibrationRequest(BaseModel):
@@ -492,6 +495,8 @@ def update_session_analysis(session_id: str, request: UpdateSessionAnalysisReque
             metadata["summary"]["observed_sigma_pct"] = request.observed_sigma_pct
         if request.observed_drift_pct is not None:
             metadata["summary"]["observed_drift_pct"] = request.observed_drift_pct
+        if request.analysis_outcome is not None:
+            metadata["summary"]["analysis_outcome"] = request.analysis_outcome
         if request.calibration_contribution is not None:
             metadata["summary"]["calibration_contribution"] = {
                 "contributed": request.calibration_contribution.contributed,
