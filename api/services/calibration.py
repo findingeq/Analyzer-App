@@ -363,6 +363,35 @@ def create_default_calibration_state() -> 'CalibrationState':
     )
 
 
+def migrate_calibration_state(state: 'CalibrationState') -> tuple['CalibrationState', bool]:
+    """
+    Migrate old calibration states that have buggy anchor_value=0.0.
+
+    Returns (state, was_migrated) tuple.
+    """
+    migrated = False
+
+    # Check and fix each domain's sigma anchor
+    domains = [
+        ('moderate', state.moderate),
+        ('heavy', state.heavy),
+        ('severe', state.severe),
+    ]
+
+    for domain_key, domain in domains:
+        expected_sigma = DEFAULT_PARAMS[domain_key]['sigma_pct']
+        # If anchor is 0 or very close to 0, it's the bug - reset to default
+        if domain.sigma.anchor_value < 0.1:
+            print(f"Migrating {domain_key} sigma anchor from {domain.sigma.anchor_value} to {expected_sigma}")
+            domain.sigma.anchor_value = expected_sigma
+            # Also reset the posterior mu if it's unreasonable
+            if domain.sigma.posterior.mu < 0.1:
+                domain.sigma.posterior.mu = expected_sigma
+            migrated = True
+
+    return state, migrated
+
+
 # ============================================================================
 # NIG Bayesian Update Functions
 # ============================================================================

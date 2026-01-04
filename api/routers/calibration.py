@@ -21,6 +21,7 @@ from ..models.enums import RunType, IntervalStatus
 from ..services.calibration import (
     CalibrationState,
     create_default_calibration_state,
+    migrate_calibration_state,
     update_calibration_from_run,
     apply_manual_threshold_override,
     get_blended_params,
@@ -66,6 +67,14 @@ def _load_calibration_state(user_id: str) -> CalibrationState:
             if blob.exists():
                 data = json.loads(blob.download_as_text())
                 state = CalibrationState.from_dict(data)
+
+                # Migrate old states with buggy anchor_value=0.0
+                state, was_migrated = migrate_calibration_state(state)
+                if was_migrated:
+                    print(f"Migrated calibration state for user {user_id}")
+                    # Save the migrated state back to Firebase
+                    _save_calibration_state(user_id, state)
+
                 _calibration_cache[user_id] = state
                 return state
         except Exception as e:
