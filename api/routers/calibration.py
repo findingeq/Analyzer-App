@@ -319,25 +319,18 @@ def set_advanced_params(request: AdvancedParamsRequest):
     Manually set advanced calibration parameters.
 
     Called when user manually changes advanced params in the UI.
-    Manual values become new anchors with reset observation posteriors.
+    Only sigma is calibrated - drift values use fixed defaults and are
+    passed directly in AnalysisParams from the frontend (not stored in calibration).
     """
     state = _load_calibration_state(request.user_id)
 
-    # Update Moderate domain (VT1) - reset anchors to user values
-    state.moderate.expected_drift.reset_anchor(request.expected_drift_vt1)
+    # Only sigma is calibrated - reset anchor to user value
+    # Drift values are NOT stored in calibration state (use fixed defaults)
     state.moderate.sigma.reset_anchor(request.sigma_pct_vt1)
-
-    # Update Heavy domain (VT2) - reset anchors to user values
-    state.heavy.expected_drift.reset_anchor(request.expected_drift_vt2)
-    state.heavy.max_drift.reset_anchor(request.max_drift_vt2)
     state.heavy.sigma.reset_anchor(request.sigma_pct_vt2)
-
-    # Update Severe domain (uses same values as Heavy for VT2)
-    state.severe.expected_drift.reset_anchor(request.expected_drift_vt2)
-    state.severe.max_drift.reset_anchor(request.max_drift_vt2)
     state.severe.sigma.reset_anchor(request.sigma_pct_vt2)
 
-    # Note: H multipliers are not stored in calibration state
+    # Note: H multipliers and drift values are not stored in calibration state
     # They are passed directly in AnalysisParams from the frontend
 
     # Enforce ordinal constraints
