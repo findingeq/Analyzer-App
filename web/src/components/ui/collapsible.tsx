@@ -14,13 +14,16 @@ const CollapsibleContent = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <CollapsiblePrimitive.CollapsibleContent
     ref={ref}
+    forceMount
     className={cn(
-      "overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down",
+      "grid transition-[grid-template-rows,opacity] duration-200 ease-out data-[state=closed]:grid-rows-[0fr] data-[state=closed]:opacity-0 data-[state=open]:grid-rows-[1fr] data-[state=open]:opacity-100",
       className
     )}
     {...props}
   >
-    {children}
+    <div className="overflow-hidden">
+      {children}
+    </div>
   </CollapsiblePrimitive.CollapsibleContent>
 ))
 CollapsibleContent.displayName = CollapsiblePrimitive.CollapsibleContent.displayName
