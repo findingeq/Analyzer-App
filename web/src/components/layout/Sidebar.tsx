@@ -39,8 +39,6 @@ import {
   Upload,
   Cloud,
   Settings,
-  BarChart3,
-  Eye,
   Sliders,
   ChevronDown,
   RotateCcw,
@@ -57,10 +55,7 @@ export function Sidebar() {
     numIntervals,
     intervalDurationMin,
     recoveryDurationMin,
-    analysisResult,
     isAnalyzing,
-    showSlopeLines,
-    showCusum,
     dataSource,
     sidebarCollapsed,
     vt1Ceiling,
@@ -75,8 +70,6 @@ export function Sidebar() {
     setRecoveryDuration,
     setAnalysisResult,
     setIsAnalyzing,
-    toggleSlopeLines,
-    toggleCusum,
     setDataSource,
     setVt1Ceiling,
     setVt2Ceiling,
@@ -302,30 +295,6 @@ export function Sidebar() {
           >
             <Play className="h-4 w-4" />
           </Button>
-        )}
-
-        <div className="w-6 border-t border-border" />
-
-        {/* Chart Options Icons */}
-        {analysisResult && (
-          <>
-            <Button
-              variant={showSlopeLines ? "default" : "ghost"}
-              size="icon"
-              onClick={toggleSlopeLines}
-              title="Show Slope Lines"
-            >
-              <BarChart3 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={showCusum ? "default" : "ghost"}
-              size="icon"
-              onClick={toggleCusum}
-              title="Show CUSUM"
-            >
-              <Eye className="h-4 w-4" />
-            </Button>
-          </>
         )}
 
         <div className="w-6 border-t border-border" />
@@ -616,26 +585,6 @@ export function Sidebar() {
         </Card>
       )}
 
-      {/* Chart Options */}
-      {analysisResult && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Chart Options</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">
-                Show Slope Lines
-              </label>
-              <Switch checked={showSlopeLines} onCheckedChange={toggleSlopeLines} />
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">Show CUSUM</label>
-              <Switch checked={showCusum} onCheckedChange={toggleCusum} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Advanced CUSUM Parameters */}
       <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>

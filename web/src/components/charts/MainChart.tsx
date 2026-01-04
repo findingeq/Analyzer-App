@@ -115,6 +115,8 @@ export function MainChart() {
         emphasis: {
           disabled: true,
         },
+        large: true, // Enable large mode for better performance
+        largeThreshold: 500,
         z: 1,
       },
       // VE Binned Line
@@ -126,6 +128,7 @@ export function MainChart() {
         data: breath_data.bin_times.map((t, i) => [t, breath_data.ve_binned[i]]),
         smooth: true,
         showSymbol: false,
+        sampling: "lttb", // Use Largest-Triangle-Three-Buckets downsampling for performance
         lineStyle: {
           color: COLORS.ve,
           width: 2,
@@ -451,8 +454,7 @@ export function MainChart() {
 
     return {
       backgroundColor: COLORS.background,
-      animation: true,
-      animationDuration: 300,
+      animation: false, // Disable animation for better legend toggle performance
       tooltip: {
         trigger: "axis",
         backgroundColor: "#18181B",
