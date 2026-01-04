@@ -157,6 +157,11 @@ export interface SessionSummary {
   observed_drift_pct?: number | null;
   exclude_from_calibration?: boolean;
   analysis_outcome?: string | null; // "below", "above", or "mixed"
+  calibration_contribution?: {
+    contributed: boolean;
+    run_type: string | null;
+    sigma_pct: number | null;
+  } | null;
 }
 
 export interface SessionInfo {
