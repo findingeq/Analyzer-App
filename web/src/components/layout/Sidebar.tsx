@@ -45,7 +45,6 @@ import {
   ChevronDown,
   RotateCcw,
   Play,
-  RefreshCw,
   CloudUpload,
 } from "lucide-react";
 
@@ -89,7 +88,6 @@ export function Sidebar() {
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
   const [calibrationLoaded, setCalibrationLoaded] = useState(false);
 
   // User ID for calibration sync (editable for phone app sync)
@@ -176,27 +174,6 @@ export function Sidebar() {
       setIsSyncing(false);
     }
   }, [advancedParams, userId, queryClient]);
-
-  // Restore advanced params from cloud calibration
-  const handleRestoreAdvancedParams = useCallback(async () => {
-    setIsRestoring(true);
-    try {
-      const params = await getCalibrationParams(userId);
-      // Only restore advanced params (not VT1/VT2 VE)
-      setAdvancedParams({
-        sigmaPctVt1: params.sigma_pct_moderate,
-        sigmaPctVt2: params.sigma_pct_heavy,
-        expectedDriftVt1: params.expected_drift_moderate,
-        expectedDriftVt2: params.expected_drift_heavy,
-        maxDriftVt1: params.max_drift_moderate,
-        maxDriftVt2: params.max_drift_heavy,
-      });
-    } catch (error) {
-      console.error("Failed to restore advanced params:", error);
-    } finally {
-      setIsRestoring(false);
-    }
-  }, [userId, setAdvancedParams]);
 
   // Parse CSV mutation
   const parseMutation = useMutation({
@@ -509,7 +486,7 @@ export function Sidebar() {
               title="Save VE thresholds to cloud"
             >
               <CloudUpload className="h-3 w-3 mr-1" />
-              {isSyncing ? "Saving..." : "Save to Cloud"}
+              {isSyncing ? "Saving..." : "Save"}
             </Button>
           </div>
         </CardContent>
@@ -717,7 +694,7 @@ export function Sidebar() {
               {/* H Multiplier */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">H (VT1)</label>
+                  <label className="text-xs text-muted-foreground" title="CUSUM threshold multiplier for VT1. Higher = less sensitive to VE changes. Threshold = H × sigma. Default: 5.0">H (VT1)</label>
                   <Input
                     type="number"
                     step="0.5"
@@ -728,10 +705,11 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="CUSUM threshold multiplier for VT1. Higher = less sensitive to VE changes. Threshold = H × sigma. Default: 5.0"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">H (VT2)</label>
+                  <label className="text-xs text-muted-foreground" title="CUSUM threshold multiplier for VT2. Higher = less sensitive to VE changes. Threshold = H × sigma. Default: 5.0">H (VT2)</label>
                   <Input
                     type="number"
                     step="0.5"
@@ -742,6 +720,7 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="CUSUM threshold multiplier for VT2. Higher = less sensitive to VE changes. Threshold = H × sigma. Default: 5.0"
                   />
                 </div>
               </div>
@@ -749,7 +728,7 @@ export function Sidebar() {
               {/* Sigma % */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Sigma % (VT1)</label>
+                  <label className="text-xs text-muted-foreground" title="VE noise level for VT1/Moderate runs. Used to set CUSUM sensitivity. Default: 7.0%">Sigma % (VT1)</label>
                   <Input
                     type="number"
                     step="0.5"
@@ -760,10 +739,11 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="VE noise level for VT1/Moderate runs. Used to set CUSUM sensitivity. Default: 7.0%"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Sigma % (VT2)</label>
+                  <label className="text-xs text-muted-foreground" title="VE noise level for VT2/Heavy runs. Used to set CUSUM sensitivity. Default: 4.0%">Sigma % (VT2)</label>
                   <Input
                     type="number"
                     step="0.5"
@@ -774,6 +754,7 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="VE noise level for VT2/Heavy runs. Used to set CUSUM sensitivity. Default: 4.0%"
                   />
                 </div>
               </div>
@@ -781,7 +762,7 @@ export function Sidebar() {
               {/* Expected Drift */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Exp. Drift % (VT1)</label>
+                  <label className="text-xs text-muted-foreground" title="Expected VE drift rate (%/min) for VT1/Moderate runs. Drift below this = BELOW_THRESHOLD. Default: 0.3%">Exp. Drift % (VT1)</label>
                   <Input
                     type="number"
                     step="0.1"
@@ -792,10 +773,11 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="Expected VE drift rate (%/min) for VT1/Moderate runs. Drift below this = BELOW_THRESHOLD. Default: 0.3%"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Exp. Drift % (VT2)</label>
+                  <label className="text-xs text-muted-foreground" title="Expected VE drift rate (%/min) for VT2/Heavy runs. Drift below this = BELOW_THRESHOLD. Default: 1.0%">Exp. Drift % (VT2)</label>
                   <Input
                     type="number"
                     step="0.1"
@@ -806,6 +788,7 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="Expected VE drift rate (%/min) for VT2/Heavy runs. Drift below this = BELOW_THRESHOLD. Default: 1.0%"
                   />
                 </div>
               </div>
@@ -813,7 +796,7 @@ export function Sidebar() {
               {/* Max Drift (VT1 and VT2) */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Max Drift % (VT1)</label>
+                  <label className="text-xs text-muted-foreground" title="Maximum VE drift rate (%/min) for VT1/Moderate runs. Drift at or above this = ABOVE_THRESHOLD. Default: 1.0%">Max Drift % (VT1)</label>
                   <Input
                     type="number"
                     step="0.1"
@@ -824,10 +807,11 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="Maximum VE drift rate (%/min) for VT1/Moderate runs. Drift at or above this = ABOVE_THRESHOLD. Default: 1.0%"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Max Drift % (VT2)</label>
+                  <label className="text-xs text-muted-foreground" title="Maximum VE drift rate (%/min) for VT2/Heavy runs. Drift at or above this = ABOVE_THRESHOLD. Default: 3.0%">Max Drift % (VT2)</label>
                   <Input
                     type="number"
                     step="0.1"
@@ -838,6 +822,7 @@ export function Sidebar() {
                       })
                     }
                     className="h-8"
+                    title="Maximum VE drift rate (%/min) for VT2/Heavy runs. Drift at or above this = ABOVE_THRESHOLD. Default: 3.0%"
                   />
                 </div>
               </div>
@@ -871,29 +856,18 @@ export function Sidebar() {
                 </p>
               </div>
 
-              {/* Sync/Restore Buttons for Advanced Params */}
-              <div className="flex gap-2 pt-2 border-t">
+              {/* Save Advanced Params Button */}
+              <div className="pt-2 border-t">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 text-xs"
+                  className="w-full text-xs"
                   onClick={handleSyncAdvancedParams}
-                  disabled={isSyncing || isRestoring}
-                  title="Sync advanced params to cloud"
+                  disabled={isSyncing}
+                  title="Save advanced params to cloud"
                 >
                   <CloudUpload className="h-3 w-3 mr-1" />
-                  {isSyncing ? "Syncing..." : "Sync to Cloud"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 text-xs"
-                  onClick={handleRestoreAdvancedParams}
-                  disabled={isSyncing || isRestoring}
-                  title="Restore advanced params from cloud"
-                >
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  {isRestoring ? "Restoring..." : "Restore"}
+                  {isSyncing ? "Saving..." : "Save"}
                 </Button>
               </div>
             </CardContent>

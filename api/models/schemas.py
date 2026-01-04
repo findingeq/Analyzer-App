@@ -374,6 +374,13 @@ class CalibrationUpdateRequest(BaseModel):
     interval_results: List[dict] = Field(description="List of interval result dicts")
 
 
+class CalibrationContribution(BaseModel):
+    """Data about a session's contribution to calibration."""
+    contributed: bool = Field(description="Whether the session contributed to calibration")
+    run_type: Optional[str] = Field(default=None, description="Domain that was calibrated (MODERATE/HEAVY/SEVERE)")
+    sigma_pct: Optional[float] = Field(default=None, description="Sigma value that was contributed")
+
+
 class CalibrationUpdateResponse(BaseModel):
     """Response from calibration update."""
     success: bool
@@ -381,6 +388,10 @@ class CalibrationUpdateResponse(BaseModel):
     ve_prompt: Optional[dict] = Field(
         default=None,
         description="VE threshold prompt if change >= 1 L/min"
+    )
+    contribution: Optional[CalibrationContribution] = Field(
+        default=None,
+        description="Details of what this run contributed to calibration"
     )
 
 

@@ -138,16 +138,15 @@ class DomainPosterior:
 
     Each domain (Moderate/Heavy/Severe) has its own set of parameters.
     Uses AnchoredNIGPosterior for stability with eventual full adaptation.
+
+    Note: Only sigma is calibrated. Drift values use fixed defaults and can
+    be manually overridden by the user in advanced settings.
     """
-    expected_drift: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
-    max_drift: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
     sigma: AnchoredNIGPosterior = field(default_factory=AnchoredNIGPosterior)
 
     def to_dict(self) -> dict:
         """Serialize to dictionary."""
         return {
-            'expected_drift': self.expected_drift.to_dict(),
-            'max_drift': self.max_drift.to_dict(),
             'sigma': self.sigma.to_dict()
         }
 
@@ -155,8 +154,6 @@ class DomainPosterior:
     def from_dict(cls, d: dict) -> 'DomainPosterior':
         """Deserialize from dictionary."""
         return cls(
-            expected_drift=AnchoredNIGPosterior.from_dict(d.get('expected_drift', {})),
-            max_drift=AnchoredNIGPosterior.from_dict(d.get('max_drift', {})),
             sigma=AnchoredNIGPosterior.from_dict(d.get('sigma', {}))
         )
 
@@ -325,6 +322,45 @@ DEFAULT_PARAMS = {
 
 DEFAULT_VT1_VE = 60.0
 DEFAULT_VT2_VE = 80.0
+
+
+def create_default_calibration_state() -> 'CalibrationState':
+    """
+    Create a new CalibrationState with properly initialized anchor values.
+
+    Sigma anchors are set to DEFAULT_PARAMS values so that calibration
+    blending works correctly from the start.
+    """
+    def create_domain_posterior(domain_key: str) -> DomainPosterior:
+        sigma_default = DEFAULT_PARAMS[domain_key]['sigma_pct']
+        return DomainPosterior(
+            sigma=AnchoredNIGPosterior(
+                anchor_value=sigma_default,
+                anchor_kappa=4.0,
+                posterior=NIGPosterior(mu=sigma_default, kappa=0.0, alpha=2.0, beta=1.0, n_obs=0)
+            )
+        )
+
+    return CalibrationState(
+        moderate=create_domain_posterior('moderate'),
+        heavy=create_domain_posterior('heavy'),
+        severe=create_domain_posterior('severe'),
+        vt1_ve=VEThresholdState(
+            current_value=DEFAULT_VT1_VE,
+            anchor_value=DEFAULT_VT1_VE,
+            anchor_kappa=4.0,
+            posterior=NIGPosterior(mu=DEFAULT_VT1_VE, kappa=0.0, alpha=2.0, beta=1.0, n_obs=0)
+        ),
+        vt2_ve=VEThresholdState(
+            current_value=DEFAULT_VT2_VE,
+            anchor_value=DEFAULT_VT2_VE,
+            anchor_kappa=4.0,
+            posterior=NIGPosterior(mu=DEFAULT_VT2_VE, kappa=0.0, alpha=2.0, beta=1.0, n_obs=0)
+        ),
+        enabled=True,
+        last_updated=None,
+        run_counts={'moderate': 0, 'heavy': 0, 'severe': 0}
+    )
 
 
 # ============================================================================
@@ -626,7 +662,7 @@ def update_calibration_from_run(
     run_type: RunType,
     interval_results: List[dict],
     lambda_: float = 0.95
-) -> Tuple[CalibrationState, Optional[dict]]:
+) -> Tuple[CalibrationState, Optional[dict], Optional[dict]]:
     """
     Update calibration state from a complete run using majority-based logic.
 
@@ -635,13 +671,10 @@ def update_calibration_from_run(
        (either ABOVE_THRESHOLD or BELOW_THRESHOLD)
     2. The majority classification matches domain expectations
 
-    When eligible, averaged values from majority intervals are used for calibration.
+    When eligible, averaged sigma from majority intervals is used for calibration.
     Each run counts as ONE calibration sample regardless of number of intervals.
 
-    All parameters use decaying anchor approach:
-    - Early runs: anchor provides stability
-    - Later runs: observations dominate as anchor fades
-    - VE thresholds auto-update (no user prompt)
+    Only sigma is calibrated. Drift values use fixed defaults.
 
     Args:
         state: Current calibration state
@@ -655,11 +688,15 @@ def update_calibration_from_run(
         lambda_: Forgetting factor for Bayesian updates
 
     Returns:
-        Tuple of (updated_state, None) - ve_prompt is always None (auto-update)
+        Tuple of (updated_state, ve_prompt, contribution)
+        - ve_prompt: Always None (VE thresholds auto-update)
+        - contribution: Dict with {contributed, run_type, sigma_pct} if contributed, else {contributed: False}
     """
+    no_contribution = {'contributed': False, 'run_type': None, 'sigma_pct': None}
+
     # Skip calibration updates if calibration is disabled
     if not state.enabled:
-        return state, None
+        return state, None, no_contribution
 
     # Step 1: Filter to intervals ≥ 6 minutes
     qualifying_intervals = []
@@ -681,7 +718,7 @@ def update_calibration_from_run(
 
     # If no qualifying intervals, run doesn't count
     if not qualifying_intervals:
-        return state, None
+        return state, None, no_contribution
 
     # Step 2: Count classifications
     above_count = sum(1 for i in qualifying_intervals if i['status'] == IntervalStatus.ABOVE_THRESHOLD)
@@ -701,33 +738,38 @@ def update_calibration_from_run(
 
     # No majority means run doesn't count for calibration
     if majority_status is None:
-        return state, None
+        return state, None, no_contribution
 
     # Step 4: Calculate averages from majority intervals
     avg_drift_pct = sum(i['drift_pct'] for i in majority_intervals) / len(majority_intervals)
     avg_sigma_pct = sum(i['sigma_pct'] for i in majority_intervals) / len(majority_intervals)
     avg_avg_ve = sum(i['avg_ve'] for i in majority_intervals) / len(majority_intervals)
 
-    # Step 5: Check domain eligibility and update drift/sigma calibration
+    # Step 5: Check domain eligibility and update sigma calibration
     # Moderate and Heavy expect BELOW_THRESHOLD, Severe expects ABOVE_THRESHOLD
+    # Note: Only sigma is calibrated. Drift uses fixed defaults.
     domain_expects_below = run_type in (RunType.MODERATE, RunType.HEAVY)
     domain_expects_above = run_type == RunType.SEVERE
 
+    contribution = no_contribution  # Default to no contribution
+
     if (domain_expects_below and majority_status == IntervalStatus.BELOW_THRESHOLD) or \
        (domain_expects_above and majority_status == IntervalStatus.ABOVE_THRESHOLD):
-        # Eligible for drift/sigma calibration
+        # Eligible for sigma calibration
         domain = state.get_domain_posterior(run_type)
 
-        # Update expected_drift and sigma using decaying anchor approach
-        domain.expected_drift = update_anchored_posterior(domain.expected_drift, avg_drift_pct, lambda_)
+        # Update sigma using decaying anchor approach
         domain.sigma = update_anchored_posterior(domain.sigma, avg_sigma_pct, lambda_)
-
-        # Note: max_drift values are derived from expected_drift in enforce_ordinal_constraints
-        # - moderate.max_drift = heavy.expected_drift
-        # - heavy.max_drift = severe.expected_drift
 
         # Increment run count by 1 (not per interval)
         state.increment_run_count(run_type)
+
+        # Record contribution
+        contribution = {
+            'contributed': True,
+            'run_type': run_type.value,
+            'sigma_pct': avg_sigma_pct
+        }
 
     # Step 6: Check VE threshold update using averaged avg_ve from majority intervals
     threshold_key, increase = check_ve_threshold_update_needed(
@@ -743,7 +785,7 @@ def update_calibration_from_run(
             state.vt2_ve = update_ve_threshold_state(state.vt2_ve, avg_avg_ve, lambda_)
 
     state.last_updated = datetime.utcnow()
-    return state, None  # No prompt - VE thresholds auto-update
+    return state, None, contribution
 
 
 def apply_manual_threshold_override(
@@ -781,7 +823,8 @@ def get_blended_params(
     """
     Get blended parameters for a run type, mixing calibrated with defaults.
 
-    If calibration is disabled, returns system defaults.
+    Only sigma is calibrated/blended. Drift values always return fixed defaults.
+    If calibration is disabled, returns system defaults for all params.
 
     Args:
         state: Current calibration state
@@ -808,16 +851,11 @@ def get_blended_params(
     run_count = state.get_run_count(run_type)
 
     return {
-        'expected_drift_pct': blend_with_default(
-            domain.expected_drift.get_point_estimate(),
-            defaults['expected_drift_pct'],
-            run_count
-        ),
-        'max_drift_pct': blend_with_default(
-            domain.max_drift.get_point_estimate(),
-            defaults['max_drift_pct'],
-            run_count
-        ),
+        # Drift values are NOT calibrated - always use fixed defaults
+        # User can manually override in advanced settings
+        'expected_drift_pct': defaults['expected_drift_pct'],
+        'max_drift_pct': defaults['max_drift_pct'],
+        # Only sigma is calibrated/blended
         'sigma_pct': blend_with_default(
             domain.sigma.get_point_estimate(),
             defaults['sigma_pct'],
@@ -830,12 +868,52 @@ def get_blended_params(
     }
 
 
+def recalculate_calibration_from_contributions(
+    contributions: List[dict],
+    lambda_: float = 0.95
+) -> CalibrationState:
+    """
+    Recalculate calibration state from a list of session contributions.
+
+    Used when a session is deleted to rebuild calibration from remaining sessions.
+    Each contribution dict should have: {run_type, sigma_pct}
+
+    Args:
+        contributions: List of contribution dicts from remaining sessions
+        lambda_: Forgetting factor for Bayesian updates
+
+    Returns:
+        Fresh CalibrationState built from the contributions
+    """
+    state = create_default_calibration_state()
+
+    for contrib in contributions:
+        run_type_str = contrib.get('run_type')
+        sigma_pct = contrib.get('sigma_pct')
+
+        if not run_type_str or sigma_pct is None:
+            continue
+
+        try:
+            run_type = RunType(run_type_str)
+        except ValueError:
+            continue
+
+        # Update sigma for this domain
+        domain = state.get_domain_posterior(run_type)
+        domain.sigma = update_anchored_posterior(domain.sigma, sigma_pct, lambda_)
+        state.increment_run_count(run_type)
+
+    state.last_updated = datetime.utcnow()
+    return state
+
+
 def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     """
-    Enforce ordinal constraints: Moderate drift < Heavy drift < Severe drift.
+    Enforce ordinal constraints for VE thresholds.
 
-    Only applies to drift parameters (expected and max).
-    Sigma has NO ordinal constraint.
+    Only enforces VT1 < VT2 constraint. Drift parameters are no longer
+    calibrated and use fixed defaults.
 
     Args:
         state: Current calibration state
@@ -843,29 +921,6 @@ def enforce_ordinal_constraints(state: CalibrationState) -> CalibrationState:
     Returns:
         State with constraints enforced
     """
-    # Get point estimates (uses anchored mean from AnchoredNIGPosterior)
-    mod_expected = state.moderate.expected_drift.get_point_estimate()
-    heavy_expected = state.heavy.expected_drift.get_point_estimate()
-    severe_expected = state.severe.expected_drift.get_point_estimate()
-
-    # Enforce: Moderate < Heavy
-    if mod_expected >= heavy_expected:
-        avg = (mod_expected + heavy_expected) / 2
-        state.moderate.expected_drift.posterior.mu = avg - 0.1
-        state.heavy.expected_drift.posterior.mu = avg + 0.1
-
-    # Enforce: Heavy < Severe
-    if heavy_expected >= severe_expected:
-        avg = (heavy_expected + severe_expected) / 2
-        state.heavy.expected_drift.posterior.mu = avg - 0.1
-        state.severe.expected_drift.posterior.mu = avg + 0.1
-
-    # Derive max_drift values from the next domain's expected_drift
-    # Moderate's ceiling = Heavy's expected (where heavy domain starts)
-    # Heavy's ceiling = Severe's expected (where severe domain starts)
-    state.moderate.max_drift.posterior.mu = state.heavy.expected_drift.get_point_estimate()
-    state.heavy.max_drift.posterior.mu = state.severe.expected_drift.get_point_estimate()
-
     # Enforce VT1 < VT2
     if state.vt1_ve.current_value >= state.vt2_ve.current_value:
         gap = 5.0  # Minimum 5 L/min gap

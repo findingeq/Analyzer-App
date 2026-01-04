@@ -1,7 +1,7 @@
 # ML Calibration System - Implementation Specification
 
 > **Status**: Implemented
-> **Last Updated**: 2026-01-03
+> **Last Updated**: 2026-01-04
 
 ---
 
@@ -87,16 +87,16 @@ Intervals < 6 min use ceiling-based analysis and do not contribute to calibratio
 
 ### Per-Domain Parameters:
 
-| Parameter | Moderate | Heavy | Severe | Ordinal Constraint |
-|-----------|----------|-------|--------|-------------------|
-| `expected_drift_pct` | ✓ | ✓ | ✓ | Moderate < Heavy < Severe |
-| `max_drift_pct` | ✓ (derived) | ✓ (derived) | — | Derived from next domain |
-| `sigma_pct` | ✓ | ✓ | ✓ | **NONE** |
+| Parameter | Moderate | Heavy | Severe | Calibrated? |
+|-----------|----------|-------|--------|-------------|
+| `expected_drift_pct` | 0.3% | 1.0% | 2.0% | **NO** (fixed defaults) |
+| `max_drift_pct` | 1.0% | 3.0% | 5.0% | **NO** (fixed defaults) |
+| `sigma_pct` | ✓ | ✓ | ✓ | **YES** (no ordinal constraint) |
 
 **Note**:
-- Both Moderate and Heavy domains use expected_drift and max_drift for classification
-- Severe calibrates expected_drift to inform Heavy's max_drift ceiling
-- **max_drift is derived, not directly calibrated**: moderate.max_drift = heavy.expected_drift, heavy.max_drift = severe.expected_drift
+- **Only sigma_pct is calibrated** - drift and max_drift use fixed defaults
+- Drift calibration was removed due to circular bias (drift only calibrated downward, which affected CUSUM sensitivity)
+- Users can manually override drift values in the sidebar and save to cloud
 
 ### Global VE Thresholds:
 
@@ -137,47 +137,39 @@ The observed sigma is calculated as a percentage of baseline VE and fed into cal
 
 ---
 
-## Drift/Sigma Calibration Logic
+## Sigma Calibration Logic
 
 ### Run-Level Calibration with Majority Rule
 
 Each run (session) counts as **ONE calibration sample**, regardless of number of intervals. Multi-interval runs use majority-based logic:
 
 1. **Filter intervals**: Only intervals ≥ 6 minutes are considered
-2. **Majority check**: >50% of filtered intervals must share the same classification (ABOVE_THRESHOLD or BELOW_THRESHOLD)
+2. **Majority check**: >50% of filtered intervals must share the **expected** classification for the domain
 3. **If majority exists**:
-   - Calculate **averaged values** (drift_pct, sigma_pct, avg_ve) from majority intervals only
-   - Check if majority classification matches domain expectations
-   - If eligible: update posteriors with averaged values, increment run_count by 1
+   - Calculate **averaged sigma_pct** from qualifying intervals only
+   - Update sigma posterior with averaged value, increment run_count by 1
+   - Store contribution metadata in session for potential recalculation
 4. **If no majority**: Run is excluded from calibration entirely (mixed results are too noisy)
 5. BORDERLINE intervals count toward denominator but never toward majority
 
-### Domain-Specific Update Rules:
+### Domain-Specific Eligibility Rules:
 
-| Run Domain | Expected Outcome | Parameters Updated |
-|------------|------------------|-------------------|
-| **Moderate** | BELOW_THRESHOLD | Moderate: expected_drift, max_drift, sigma |
-| **Heavy** | BELOW_THRESHOLD | Heavy: expected_drift, max_drift, sigma |
-| **Severe** | ABOVE_THRESHOLD | Severe: expected_drift, sigma; **Heavy: max_drift** |
+| Run Domain | Required Classification | Parameters Updated |
+|------------|------------------------|-------------------|
+| **Moderate** | BELOW_THRESHOLD | Moderate: sigma |
+| **Heavy** | BELOW_THRESHOLD | Heavy: sigma |
+| **Severe** | ABOVE_THRESHOLD | Severe: sigma |
 
-### Cross-Domain max_drift Calibration:
+**Why These Rules**:
+- Moderate/Heavy: Only BELOW_THRESHOLD runs represent proper below-VT behavior for that domain
+- Severe: Only ABOVE_THRESHOLD runs represent proper above-VT2 behavior
 
-Heavy domain's max_drift is informed by Severe's expected_drift:
+### Session Deletion and Recalculation:
 
-- **max_drift_heavy** ← Severe's expected_drift (if you drift like Severe, you're above VT2)
-
-### Severe Domain Specifics:
-
-Severe runs only calibrate **expected_drift** and **sigma** (not max_drift):
-- **expected_drift**: Used to set Heavy's max_drift ceiling
-- **sigma**: Used for CUSUM sensitivity in Severe runs
-- **max_drift**: Not needed (no domain above Severe)
-
-### Domain Isolation (No Cross-Pollination):
-
-Domain models are kept pure for expected_drift and sigma. If a Severe run unexpectedly shows low drift, this triggers VT2 threshold adjustment, not Heavy parameter updates.
-
-**Rationale**: Heavy domain behavior is concave (drift stabilizes), while Severe is convex (drift accelerates). Cross-pollination would corrupt domain-specific drift shapes.
+When a session is deleted:
+1. Check if session contributed to calibration (via stored metadata)
+2. If contributed: recalculate calibration from all remaining sessions' contributions
+3. Contribution metadata: `{ contributed: boolean, run_type: string, sigma_pct: number }`
 
 ---
 
@@ -252,23 +244,22 @@ For runs with multiple intervals, VE threshold calibration uses the same majorit
    - On sidebar load, all calibrated parameters sync from cloud:
      - VT1/VT2 thresholds
      - Sigma % (VT1=Moderate, VT2=Heavy)
-     - Expected Drift % (VT1=Moderate, VT2=Heavy)
-     - Max Drift % (VT1=Moderate, VT2=Heavy)
+     - Expected Drift % (fixed defaults: VT1=0.3%, VT2=1.0%)
+     - Max Drift % (fixed defaults: VT1=1.0%, VT2=3.0%)
    - User can manually adjust values for specific run analysis
-   - Changes are local until explicitly synced
+   - Changes are local until explicitly saved
 
-3. **Sync to Calibration button** - in VT Thresholds card
+3. **Save button** - in VT Thresholds card
    - Pushes current sidebar VT1/VT2 values to cloud calibration
    - Resets Bayesian posterior to new anchor values
    - Useful when user wants to "lock in" manual adjustments
-   - Note: Advanced params (sigma, drift, etc.) are not synced back (read-only from calibration)
 
-4. **Restore from Calibration button** - in VT Thresholds card
-   - Fetches all cloud-calibrated values (VT thresholds + advanced params)
-   - Restores sidebar to cloud values (discards local changes)
-   - Does not affect the Bayesian posterior
+4. **Save button** - in Advanced Parameters card
+   - Pushes current advanced params to cloud (sigma, drift, max_drift, h-multiplier)
+   - Allows user to override any parameter values
+   - No automatic restore - user must manually adjust if needed
 
-5. **Calibration exclusion checkbox** - per run in cloud run table (pending)
+5. **Calibration exclusion checkbox** - per run in cloud run table
    - Allows user to exclude specific runs from calibration
    - Useful for unusual/outlier sessions
 
@@ -279,7 +270,7 @@ For runs with multiple intervals, VE threshold calibration uses the same majorit
    - Future calibration observations start fresh from this baseline
    - Endpoint: `POST /api/calibration/set-ve-threshold`
 
-**Note**: VE thresholds auto-update without user prompts. The approval popup has been removed - calibrated values automatically populate from the cloud.
+**Note**: VE thresholds auto-update without user prompts. Calibrated values automatically populate from the cloud. There is no "Restore" button - users can manually reset values if needed.
 
 ---
 
@@ -304,9 +295,7 @@ class CalibrationState:
     run_counts: Dict[str, int]  # qualifying runs per domain (1 per run, not per interval)
 
 class DomainPosterior:
-    expected_drift: AnchoredNIGPosterior  # Calibrated from observations
-    max_drift: AnchoredNIGPosterior       # Derived from next domain's expected_drift
-    sigma: AnchoredNIGPosterior           # Calibrated from observations
+    sigma: AnchoredNIGPosterior  # Only sigma is calibrated; drift uses fixed defaults
 
 class AnchoredNIGPosterior:
     anchor_value: float     # Starting point (default or user-set)
@@ -325,6 +314,11 @@ class NIGPosterior:
     alpha: float   # shape
     beta: float    # scale
     n_obs: int     # observation count
+
+class CalibrationContribution:
+    contributed: bool        # Whether this session contributed to calibration
+    run_type: str | None     # Domain (MODERATE, HEAVY, SEVERE)
+    sigma_pct: float | None  # Observed sigma that was contributed
 ```
 
 ---
@@ -662,3 +656,11 @@ Response:
 | 2026-01-03 | anchor_kappa decays with λ=0.95, allowing observations to dominate over time |
 | 2026-01-03 | Added AnchoredNIGPosterior structure for drift/sigma parameters |
 | 2026-01-03 | Manual override creates new anchor and resets observation posterior |
+| 2026-01-04 | **Removed drift/max_drift from calibration** - only sigma is now calibrated |
+| 2026-01-04 | Drift calibration removed due to circular bias (only calibrated downward) |
+| 2026-01-04 | Fixed sigma anchor initialization bug (was 0.0, now uses proper defaults) |
+| 2026-01-04 | Session deletion now recalculates calibration from remaining contributions |
+| 2026-01-04 | Added CalibrationContribution schema for tracking session contributions |
+| 2026-01-04 | Removed "Restore" button - users can manually adjust and save values |
+| 2026-01-04 | Renamed "Sync to Cloud" and "Save to Cloud" buttons to "Save" |
+| 2026-01-04 | Added tooltips to all advanced parameters with explanations and defaults |

@@ -20,6 +20,7 @@ import {
   updateCalibration,
   updateSessionAnalysis,
   updateSessionCalibration,
+  getOrCreateUserId,
 } from "@/lib/client";
 import type { RunType } from "@/lib/api-types";
 import { useQueryClient } from "@tanstack/react-query";
@@ -73,10 +74,12 @@ export function StartupScreen() {
 
   // Delete session mutation
   const deleteSessionMutation = useMutation({
-    mutationFn: deleteSession,
+    mutationFn: (sessionId: string) => deleteSession(sessionId, getOrCreateUserId()),
     onSuccess: () => {
       // Refetch sessions after delete
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      // Refresh calibration params in case deleted session contributed
+      queryClient.invalidateQueries({ queryKey: ["calibration-params"] });
     },
     onError: (error) => {
       console.error("Failed to delete session:", error);
@@ -133,12 +136,15 @@ export function StartupScreen() {
       const isExcluded = sessionInfo?.summary?.exclude_from_calibration ?? false;
 
       // Update calibration with results (only if not excluded)
+      let calibrationContribution: { contributed: boolean; run_type?: string | null; sigma_pct?: number | null } | null = null;
       if (runType && analysisResult.results?.length > 0 && !isExcluded) {
         try {
           const calibrationResult = await updateCalibration(runType, analysisResult.results);
           if (calibrationResult.ve_prompt) {
             setPendingVEPrompt(calibrationResult.ve_prompt);
           }
+          // Store contribution info to save to session metadata
+          calibrationContribution = calibrationResult.contribution ?? null;
         } catch (error) {
           console.warn("Calibration update failed:", error);
         }
@@ -160,9 +166,9 @@ export function StartupScreen() {
           ? validDrifts.reduce((a, b) => a + b, 0) / validDrifts.length
           : null;
 
-        // Save analysis results to session metadata
+        // Save analysis results and calibration contribution to session metadata
         try {
-          await updateSessionAnalysis(sessionId, avgSigma, avgDrift);
+          await updateSessionAnalysis(sessionId, avgSigma, avgDrift, calibrationContribution);
           // Refresh sessions list to show updated sigma/drift
           queryClient.invalidateQueries({ queryKey: ["sessions"] });
         } catch (error) {

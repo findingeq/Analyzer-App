@@ -13,12 +13,14 @@ from ..models.schemas import (
     CalibrationParamsResponse,
     CalibrationUpdateRequest,
     CalibrationUpdateResponse,
+    CalibrationContribution,
     VEApprovalRequest,
     AdvancedParamsRequest,
 )
 from ..models.enums import RunType, IntervalStatus
 from ..services.calibration import (
     CalibrationState,
+    create_default_calibration_state,
     update_calibration_from_run,
     apply_manual_threshold_override,
     get_blended_params,
@@ -69,8 +71,8 @@ def _load_calibration_state(user_id: str) -> CalibrationState:
         except Exception as e:
             print(f"Warning: Could not load calibration for {user_id}: {e}")
 
-    # Create new default state
-    state = CalibrationState()
+    # Create new default state with proper anchor values
+    state = create_default_calibration_state()
     _calibration_cache[user_id] = state
     return state
 
@@ -146,18 +148,19 @@ def update_calibration(request: CalibrationUpdateRequest):
     2. The majority classification matches domain expectations
 
     Each run counts as ONE calibration sample regardless of number of intervals.
-    Returns a VE prompt if threshold change >= 1 L/min.
+    Only sigma is calibrated; drift uses fixed defaults.
+    Returns contribution info to be stored in session metadata.
     """
     state = _load_calibration_state(request.user_id)
 
     # Use majority-based calibration logic
-    state, ve_prompt = update_calibration_from_run(
+    state, ve_prompt, contribution = update_calibration_from_run(
         state=state,
         run_type=request.run_type,
         interval_results=request.interval_results
     )
 
-    # Enforce ordinal constraints
+    # Enforce ordinal constraints (VT1 < VT2)
     state = enforce_ordinal_constraints(state)
 
     # Save updated state
@@ -166,7 +169,8 @@ def update_calibration(request: CalibrationUpdateRequest):
     return CalibrationUpdateResponse(
         success=True,
         run_count=state.get_run_count(request.run_type),
-        ve_prompt=ve_prompt
+        ve_prompt=ve_prompt,
+        contribution=CalibrationContribution(**contribution) if contribution else None
     )
 
 
